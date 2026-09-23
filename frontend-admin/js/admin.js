@@ -185,15 +185,17 @@ async function renderDashboard() {
   const m = d.metrics;
   $("content").innerHTML = `
     <div class="metrics">
-      <div class="metric"><span>Registrations</span><strong>${n(m.registrations)}</strong></div>
+      <div class="metric"><span>Total Students</span><strong>${n(m.registrations)}</strong></div>
+      <div class="metric"><span>Passports Issued</span><strong>${n(m.certificates)}</strong></div>
+      <div class="metric saffron"><span>Passports In Queue</span><strong>${n(m.passports_in_queue)}</strong></div>
       <div class="metric green"><span>Active Passports</span><strong>${n(m.active_passports)}</strong></div>
       <div class="metric saffron"><span>Registered Today</span><strong>${n(m.registrations_today)}</strong></div>
       <div class="metric gold"><span>Scans Today</span><strong>${n(m.scans_today)}</strong></div>
+      <div class="metric"><span>Checkpoint Responses (DB)</span><strong>${n(m.checkpoint_responses_total)}</strong></div>
       <div class="metric green"><span>Approved Stamps</span><strong>${n(m.approved_stamps)}</strong></div>
       <div class="metric saffron"><span>Pending Review</span><strong>${n(m.pending_reviews)}</strong></div>
       <div class="metric danger"><span>Rejected Stamps</span><strong>${n(m.rejected_stamps)}</strong></div>
       <div class="metric danger"><span>Fraud Flagged</span><strong>${n(m.fraud_flagged_stamps)}</strong></div>
-      <div class="metric"><span>Certificates Issued</span><strong>${n(m.certificates)}</strong></div>
       <div class="metric green"><span>Redeemed</span><strong>${n(m.redeemed)}</strong></div>
       <div class="metric gold"><span>Prize Eligible</span><strong>${n(m.prize_eligible)}</strong></div>
       <div class="metric gold"><span>Priority Draw Eligible</span><strong>${n(m.priority_draw_eligible)}</strong></div>
@@ -201,6 +203,7 @@ async function renderDashboard() {
     <div class="grid-2">
       <div class="card">
         <div class="card-head"><h3>Checkpoint Activity</h3><button class="btn small" onclick="loadSection('dashboard')">Refresh</button></div>
+        <p class="muted" style="margin:-6px 0 12px">Every QR scan a student submits is saved straight into the <code>stamps</code> table (one row per checkpoint response) — the counts below are read live from that data, so a new column here means the checkpoint answer really did reach the database.</p>
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Checkpoint</th><th>Hall</th><th>Approved</th><th>Pending</th><th>Rejected</th><th>Active</th></tr></thead><tbody>
           ${d.checkpoints.map((c) => `<tr>
             <td>${c.is_bonus ? "Bonus " + c.stamp_number : "Stamp " + c.stamp_number}</td>
@@ -209,7 +212,7 @@ async function renderDashboard() {
             <td><span class="status warn">${n(c.pending)}</span></td>
             <td><span class="status bad">${n(c.rejected)}</span></td>
             <td><span class="status ${c.is_active ? "ok" : "bad"}">${c.is_active ? "ACTIVE" : "OFF"}</span></td>
-          </tr>`).join("")}
+          </tr>`).join("") || `<tr><td colspan="6" class="muted">No checkpoints yet — go to Checkpoints and click "Seed Official 15 Checkpoints".</td></tr>`}
         </tbody></table></div>
       </div>
       <div class="card">
@@ -218,7 +221,8 @@ async function renderDashboard() {
           <span class="muted">${esc(r.route_colour)}</span><b>${n(r.students)} students</b></div>`).join("")}
         <h3 style="margin-top:16px">System Snapshot</h3>
         <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eee9df"><span class="muted">Failed scans today</span><b>${n(m.failed_scans_today)}</b></div>
-        <div style="display:flex;justify-content:space-between;padding:9px 0"><span class="muted">Feedback responses</span><b>${n(m.feedback_responses)}</b></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eee9df"><span class="muted">Feedback responses</span><b>${n(m.feedback_responses)}</b></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 0"><span class="muted">Student directory</span><button class="btn small" onclick="loadSection('students')">Open →</button></div>
       </div>
     </div>`;
 }
@@ -312,17 +316,18 @@ async function renderCheckpoints() {
       </div>
     </div>
     ${d.items.length === 0 ? `<div class="card"><p class="muted" style="margin:0">No checkpoints yet. Click <b>Seed Official 15 Checkpoints</b> to create the 10 compulsory + 5 bonus hall checkpoints from the BRD in one go (each gets its own QR), then edit each one to set its GPS latitude/longitude from the on-site survey before going live.</p></div>` : ""}
-    <div class="card table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Hall</th><th>Theme</th><th>Type</th><th>Geo</th><th>Active</th><th>Responses</th><th></th></tr></thead><tbody>
+    <div class="card table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Hall</th><th>Theme</th><th>Type</th><th>Geo</th><th>Fallback Code</th><th>Active</th><th>Responses</th><th></th></tr></thead><tbody>
       ${d.items.map((c) => `<tr>
         <td>${c.is_bonus ? "B" + c.stamp_number : c.stamp_number}</td>
         <td>${esc(c.hall_zone)}</td><td>${esc(c.theme)}</td><td>${esc(c.answer_type)}</td>
         <td>${c.latitude != null ? c.geofence_radius_m + "m" : `<span class="status warn">Set GPS</span>`}</td>
+        <td><span class="mono" style="letter-spacing:2px">${esc(c.manual_code || "—")}</span></td>
         <td><span class="status ${c.is_active ? "ok" : "bad"}">${c.is_active ? "ACTIVE" : "OFF"}</span></td>
         <td><button class="btn small" onclick="viewCheckpointResponses('${c.id}')">View</button></td>
         <td style="white-space:nowrap">
           <button class="btn small" onclick="openCheckpointModal('${c.id}')">Edit</button>
           <button class="btn small" onclick="showQr('${c.id}')">QR</button>
-          <button class="btn small" onclick="rotateQr('${c.id}')">Rotate</button>
+          <button class="btn small" onclick="rotateQr('${c.id}')" title="Invalidates the current QR permanently and issues a new one — use only if a QR is lost/leaked">Invalidate &amp; Reissue</button>
           <button class="btn small" onclick="toggleCheckpoint('${c.id}',${!c.is_active})">${c.is_active ? "Disable" : "Enable"}</button>
         </td>
       </tr>`).join("")}
@@ -350,6 +355,7 @@ function openCheckpointModal(id) {
   $("checkpointForm").reset();
   $("cpId").value = id || "";
   $("modalTitle").textContent = id ? "Edit Checkpoint" : "New Checkpoint";
+  $("cpManualCodeRow").classList.add("hidden");
   if (id) {
     const c = checkpointCache.find((x) => x.id === id);
     if (c) {
@@ -359,10 +365,11 @@ function openCheckpointModal(id) {
       $("answerOptions").value = (c.answer_options || []).join(", ");
       $("latitude").value = c.latitude ?? ""; $("longitude").value = c.longitude ?? "";
       $("radius").value = c.geofence_radius_m; $("maxAccuracy").value = c.max_accuracy_m;
-      $("qrExpiry").value = c.qr_expires_seconds; $("isActive").value = String(c.is_active);
+      $("isActive").value = String(c.is_active);
+      if (c.manual_code) { $("cpManualCode").textContent = c.manual_code; $("cpManualCodeRow").classList.remove("hidden"); }
     }
   } else {
-    $("radius").value = 40; $("maxAccuracy").value = 50; $("qrExpiry").value = 600; $("minLength").value = 0;
+    $("radius").value = 40; $("maxAccuracy").value = 50; $("minLength").value = 0;
   }
   $("checkpointModal").classList.remove("hidden");
 }
@@ -380,7 +387,7 @@ async function saveCheckpoint(e) {
     latitude: $("latitude").value ? Number($("latitude").value) : null,
     longitude: $("longitude").value ? Number($("longitude").value) : null,
     geofence_radius_m: Number($("radius").value), max_accuracy_m: Number($("maxAccuracy").value),
-    qr_expires_seconds: Number($("qrExpiry").value), is_active: $("isActive").value === "true",
+    is_active: $("isActive").value === "true",
   };
   try {
     const id = $("cpId").value;
@@ -395,19 +402,63 @@ async function toggleCheckpoint(id, active) {
   toast(active ? "Checkpoint enabled." : "Checkpoint disabled."); loadSection("checkpoints");
 }
 
+let currentQrCheckpointName = "";
+let currentQrManualCode = "";
 async function showQr(id) {
   const d = await api(`/api/admin/checkpoints/${id}/qr-token`);
+  const cp = checkpointCache.find((x) => x.id === id);
+  currentQrCheckpointName = cp ? `${cp.is_bonus ? "Bonus " + cp.stamp_number : "Stamp " + cp.stamp_number} - ${cp.hall_zone}`.replace(/[^a-z0-9\- ]/gi, "").trim() : "checkpoint";
+  currentQrManualCode = d.manual_code || "";
   $("qrBox").innerHTML = "";
   new QRCode($("qrBox"), { text: d.token, width: 220, height: 220 });
-  $("qrMeta").innerHTML = `Expires: ${new Date(d.expires_at * 1000).toLocaleTimeString()}<br><span class="mono" style="font-size:10px;word-break:break-all">${esc(d.token)}</span>`;
+  $("qrMeta").innerHTML = `<span class="status ok">Never expires</span> — safe to print once and reuse for the whole event.
+    <div style="margin-top:10px;padding:10px;background:#f7f4ec;border-radius:8px">
+      <span class="muted" style="font-size:12px">Can't scan? Enter this code instead:</span><br>
+      <b style="font-size:26px;letter-spacing:4px;font-family:monospace">${esc(currentQrManualCode)}</b>
+    </div>`;
   $("qrModal").classList.remove("hidden");
 }
 function closeQR() { $("qrModal").classList.add("hidden"); }
 function printQR() { window.print(); }
 
+// Renders the on-screen QR plus the fallback code onto one offscreen
+// canvas, so the code is baked into the PNG itself (not just shown on
+// the webpage) — the printed/downloaded sheet is what a staff member or
+// student will actually be reading from at the checkpoint.
+function buildQrDownloadCanvas() {
+  const qrEl = $("qrBox").querySelector("canvas") || $("qrBox").querySelector("img");
+  if (!qrEl) return null;
+  const size = 220, pad = 24, codeH = 90;
+  const canvas = document.createElement("canvas");
+  canvas.width = size + pad * 2;
+  canvas.height = size + pad * 2 + codeH;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(qrEl, pad, pad, size, size);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#333333";
+  ctx.font = "13px Arial, sans-serif";
+  ctx.fillText("Can't scan? Enter code:", canvas.width / 2, size + pad + 24);
+  ctx.fillStyle = "#111111";
+  ctx.font = "bold 30px monospace";
+  const spacedCode = (currentQrManualCode || "------").split("").join(" ");
+  ctx.fillText(spacedCode, canvas.width / 2, size + pad + 62);
+  return canvas;
+}
+
+function downloadQR() {
+  const canvas = buildQrDownloadCanvas();
+  if (!canvas) { toast("QR not ready yet.", true); return; }
+  const a = document.createElement("a");
+  a.href = canvas.toDataURL("image/png");
+  a.download = `UPITS-2026-QR-${currentQrCheckpointName || "checkpoint"}.png`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
 async function rotateQr(id) {
   const d = await api(`/api/admin/checkpoints/${id}/rotate-qr`, { method: "POST" });
-  toast("QR secret rotated. Fetching new QR…");
+  toast("QR and fallback code invalidated — old printed copies will stop working. Fetching new ones…");
   showQr(id);
 }
 

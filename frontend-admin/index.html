@@ -96,8 +96,11 @@
         <label>Longitude<input id="longitude" type="number" step="any"></label>
         <label>Geofence Radius (m)<input id="radius" type="number" min="10" value="40"></label>
         <label>Max GPS Accuracy (m)<input id="maxAccuracy" type="number" min="1" value="50"></label>
-        <label>QR Lifetime (sec)<input id="qrExpiry" type="number" min="60" value="600"></label>
         <label>Status<select id="isActive"><option value="true">Active</option><option value="false">Inactive</option></select></label>
+      </div>
+      <div id="cpManualCodeRow" class="hidden" style="margin:10px 0;padding:10px;background:#f7f4ec;border-radius:8px">
+        <span class="muted" style="font-size:12px">Manual fallback code (for students whose camera can't scan)</span><br>
+        <b id="cpManualCode" style="font-size:20px;letter-spacing:3px;font-family:monospace"></b>
       </div>
       <div id="formError" class="error hidden"></div>
       <div class="modal-actions">
@@ -113,7 +116,10 @@
     <div class="modal-head"><h3>Checkpoint QR</h3><button class="icon-btn" onclick="closeQR()">×</button></div>
     <div id="qrBox" class="qr-box"></div>
     <div id="qrMeta" class="qr-meta"></div>
-    <button class="btn primary full" onclick="printQR()">Print QR</button>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn primary full" onclick="downloadQR()">Download QR (PNG)</button>
+      <button class="btn full" onclick="printQR()">Print QR</button>
+    </div>
   </div>
 </div>
 

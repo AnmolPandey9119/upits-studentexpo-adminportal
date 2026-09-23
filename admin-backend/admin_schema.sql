@@ -20,6 +20,12 @@ ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS max_accuracy_m INT DEFAULT 50;
 ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS qr_rotated_at TIMESTAMPTZ;
 ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS qr_expires_seconds INT DEFAULT 600;
 
+-- Fallback manual entry code (BRD section 12: "QR scanner using mobile
+-- camera, plus fallback code entry for technical failure"). One unique
+-- 6-character alphanumeric code per checkpoint, printed below its QR.
+ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS manual_code VARCHAR(6);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_checkpoints_manual_code ON checkpoints(manual_code) WHERE manual_code IS NOT NULL;
+
 ALTER TABLE stamps ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
 ALTER TABLE stamps ADD COLUMN IF NOT EXISTS reviewed_reason TEXT;
 ALTER TABLE stamps ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(80);

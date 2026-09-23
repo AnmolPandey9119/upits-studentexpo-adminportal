@@ -66,7 +66,7 @@ class CheckpointPayload(BaseModel):
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
     geofence_radius_m: int = Field(default=40, ge=10, le=500)
     max_accuracy_m: int = Field(default=50, ge=1, le=500)
-    qr_expires_seconds: int = Field(default=600, ge=60, le=3600)
+    qr_expires_seconds: int = Field(default=0, ge=0, le=31536000)  # 0 = never expires (default)
     is_active: bool = True
 
 class ReviewPayload(BaseModel):
@@ -92,7 +92,7 @@ DEFAULT_SETTINGS = {
     "rate_limit_seconds": 60,
     "default_geofence_radius_m": 40,
     "default_max_accuracy_m": 50,
-    "default_qr_expires_seconds": 600,
+    "default_qr_expires_seconds": 0,
     "event_start_date": "2026-09-25",
     "event_end_date": "2026-09-29",
     "default_language": "en",
@@ -111,6 +111,10 @@ async def dashboard():
               (SELECT COUNT(*) FROM students) AS registrations,
               (SELECT COUNT(*) FROM students WHERE registration_status='active') AS active_passports,
               (SELECT COUNT(*) FROM students WHERE created_at::date = CURRENT_DATE) AS registrations_today,
+              (SELECT COUNT(*) FROM students s WHERE NOT EXISTS (
+                  SELECT 1 FROM certificates ce WHERE ce.student_id = s.id
+              )) AS passports_in_queue,
+              (SELECT COUNT(*) FROM stamps) AS checkpoint_responses_total,
               (SELECT COUNT(*) FROM stamps WHERE status='approved') AS approved_stamps,
               (SELECT COUNT(*) FROM stamps WHERE status IN ('pending','manual')) AS pending_reviews,
               (SELECT COUNT(*) FROM stamps WHERE status='rejected') AS rejected_stamps,
@@ -208,10 +212,31 @@ async def set_student_status(passport_id: str, payload: StudentStatusPayload):
 # =========================================================================
 # Checkpoints & QR
 # =========================================================================
+CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # excludes O/0/I/1 — hard to misread on a printed sheet
+
+async def _unique_manual_code(conn) -> str:
+    """6-character alphanumeric fallback code for a checkpoint (BRD
+    section 12: 'QR scanner using mobile camera, plus fallback code
+    entry for technical failure'). Retries on the rare collision."""
+    for _ in range(20):
+        code = ''.join(secrets.choice(CODE_ALPHABET) for _ in range(6))
+        exists = await conn.fetchval('SELECT 1 FROM checkpoints WHERE manual_code=$1', code)
+        if not exists:
+            return code
+    raise HTTPException(500, 'Could not generate a unique fallback code, please retry.')
+
+
 @router.get('/checkpoints')
 async def list_checkpoints():
     pool = await get_pool()
     async with pool.acquire() as conn:
+        # Backfill: checkpoints created before the fallback-code feature
+        # existed have manual_code = NULL. Assign them one now so nothing
+        # needs a manual migration step.
+        missing = await conn.fetch('SELECT id FROM checkpoints WHERE manual_code IS NULL')
+        for row in missing:
+            code = await _unique_manual_code(conn)
+            await conn.execute('UPDATE checkpoints SET manual_code=$2 WHERE id=$1', row['id'], code)
         rows = await conn.fetch('SELECT * FROM checkpoints ORDER BY is_bonus, stamp_number, created_at')
     return {'items': [dict(x) for x in rows]}
 
@@ -220,14 +245,15 @@ async def create_checkpoint(payload: CheckpointPayload):
     pool = await get_pool()
     secret = secrets.token_hex(24)
     async with pool.acquire() as conn:
+        manual_code = await _unique_manual_code(conn)
         row = await conn.fetchrow('''
           INSERT INTO checkpoints(stamp_number,is_bonus,hall_zone,theme,question_text,answer_type,answer_options,
-          min_answer_length,latitude,longitude,geofence_radius_m,max_accuracy_m,qr_token_secret,qr_expires_seconds,is_active,qr_rotated_at)
-          VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,now()) RETURNING *
+          min_answer_length,latitude,longitude,geofence_radius_m,max_accuracy_m,qr_token_secret,qr_expires_seconds,is_active,qr_rotated_at,manual_code)
+          VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,now(),$16) RETURNING *
         ''', payload.stamp_number,payload.is_bonus,payload.hall_zone,payload.theme,payload.question_text,
         payload.answer_type,json.dumps(payload.answer_options) if payload.answer_options is not None else None,
         payload.min_answer_length,payload.latitude,payload.longitude,payload.geofence_radius_m,payload.max_accuracy_m,
-        secret,payload.qr_expires_seconds,payload.is_active)
+        secret,payload.qr_expires_seconds,payload.is_active,manual_code)
     await audit('checkpoint_create','checkpoint',str(row['id']),{'stamp_number':payload.stamp_number})
     return dict(row)
 
@@ -344,13 +370,14 @@ async def seed_default_checkpoints(staff_name: Optional[str] = Query(default=Non
                 skipped.append(item['hall_zone'])
                 continue
             secret = secrets.token_hex(24)
+            manual_code = await _unique_manual_code(conn)
             row = await conn.fetchrow('''
               INSERT INTO checkpoints(stamp_number,is_bonus,hall_zone,theme,question_text,answer_type,answer_options,
-              min_answer_length,latitude,longitude,geofence_radius_m,max_accuracy_m,qr_token_secret,qr_expires_seconds,is_active,qr_rotated_at)
-              VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,NULL,NULL,40,50,$9,600,true,now()) RETURNING id, hall_zone
+              min_answer_length,latitude,longitude,geofence_radius_m,max_accuracy_m,qr_token_secret,qr_expires_seconds,is_active,qr_rotated_at,manual_code)
+              VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,NULL,NULL,40,50,$9,0,true,now(),$10) RETURNING id, hall_zone
             ''', item['stamp_number'], item['is_bonus'], item['hall_zone'], item['theme'], item['question_text'],
             item['answer_type'], json.dumps(item['answer_options']) if item['answer_options'] is not None else None,
-            item['min_answer_length'], secret)
+            item['min_answer_length'], secret, manual_code)
             created.append(dict(row))
     await audit('checkpoints_seed_default', 'checkpoint', None,
                 {'created': len(created), 'skipped': len(skipped)}, staff_name)
@@ -361,12 +388,18 @@ async def seed_default_checkpoints(staff_name: Optional[str] = Query(default=Non
 async def get_qr_token(checkpoint_id: str):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow('SELECT id, qr_token_secret, is_active, qr_expires_seconds FROM checkpoints WHERE id=$1', checkpoint_id)
+        row = await conn.fetchrow('SELECT id, qr_token_secret, is_active, manual_code FROM checkpoints WHERE id=$1', checkpoint_id)
     if not row or not row['is_active']:
         raise HTTPException(404, 'Checkpoint not found or inactive.')
     if not row['qr_token_secret']:
         raise HTTPException(500, 'Checkpoint QR secret is not configured.')
-    data = qr_token.generate_token(str(row['id']), row['qr_token_secret'], row['qr_expires_seconds'] or 600)
+    # Always 0 = never expires. UPITS 2026 uses one static, printable QR
+    # per checkpoint for the whole event — this is hard-coded rather than
+    # read from the checkpoint's qr_expires_seconds column so that
+    # checkpoints seeded before this decision (which stored 600) are
+    # fixed automatically too, with no manual migration needed.
+    data = qr_token.generate_token(str(row['id']), row['qr_token_secret'], 0)
+    data['manual_code'] = row['manual_code']
     await audit('checkpoint_qr_generate','checkpoint',checkpoint_id)
     return data
 
@@ -374,7 +407,9 @@ async def get_qr_token(checkpoint_id: str):
 async def rotate_qr(checkpoint_id: str):
     pool = await get_pool(); secret = secrets.token_hex(24)
     async with pool.acquire() as conn:
-        row = await conn.fetchrow('UPDATE checkpoints SET qr_token_secret=$2, qr_rotated_at=now(), updated_at=now() WHERE id=$1 RETURNING id, qr_rotated_at, qr_expires_seconds', checkpoint_id, secret)
+        manual_code = await _unique_manual_code(conn)
+        row = await conn.fetchrow('''UPDATE checkpoints SET qr_token_secret=$2, manual_code=$3, qr_rotated_at=now(), updated_at=now()
+                                      WHERE id=$1 RETURNING id, qr_rotated_at, qr_expires_seconds, manual_code''', checkpoint_id, secret, manual_code)
     if not row: raise HTTPException(404,'Checkpoint not found.')
     await audit('checkpoint_qr_rotate','checkpoint',checkpoint_id)
     return dict(row)

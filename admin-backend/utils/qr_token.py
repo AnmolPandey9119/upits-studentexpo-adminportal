@@ -24,7 +24,13 @@ import time
 from dataclasses import dataclass
 
 
-ROTATE_SECONDS = 300  # 5 minutes — BRD says "5-10 minutes", pick the safer end
+ROTATE_SECONDS = 300  # used only when a checkpoint explicitly opts into rotation
+
+# qr_expires_seconds <= 0 means "never expires" — expiry is stored as the
+# sentinel value 0 inside the token, and verify_token() skips the time
+# check whenever it sees that sentinel. This is the default for UPITS
+# 2026: one static QR printed per checkpoint, valid for the whole event,
+# rather than a QR that goes stale every few minutes.
 
 
 def _b64url_encode(raw: bytes) -> str:
@@ -39,9 +45,14 @@ def _sign(checkpoint_id: str, expiry: int, secret: str) -> str:
 
 def generate_token(checkpoint_id: str, secret: str, rotate_seconds: int = ROTATE_SECONDS) -> dict:
     """Returns {token, expires_at} for display at the checkpoint QR stand.
-    expires_at is a unix timestamp so the kiosk screen can show/refresh
-    the QR shortly before it goes stale."""
-    expiry = int(time.time()) + rotate_seconds
+    rotate_seconds <= 0 produces a token that never expires (expires_at
+    is returned as 0 so the frontend can show "Never expires" instead of
+    a countdown). A positive value keeps the original rotating behaviour
+    if a specific checkpoint ever needs it."""
+    if rotate_seconds and rotate_seconds > 0:
+        expiry = int(time.time()) + rotate_seconds
+    else:
+        expiry = 0
     sig = _sign(checkpoint_id, expiry, secret)
     token = f"{checkpoint_id}.{expiry}.{sig}"
     return {"token": token, "expires_at": expiry}
@@ -55,7 +66,8 @@ class TokenVerifyResult:
 
 
 def verify_token(token: str, secret: str, expected_checkpoint_id: str) -> TokenVerifyResult:
-    """Verifies signature + expiry + that the token belongs to the
+    """Verifies signature + expiry (unless the token is the "never
+    expires" sentinel, expiry == 0) + that the token belongs to the
     checkpoint the student says they scanned (defence against pasting a
     token copied from a different checkpoint's QR)."""
     try:
@@ -71,7 +83,7 @@ def verify_token(token: str, secret: str, expected_checkpoint_id: str) -> TokenV
     if not hmac.compare_digest(sig, expected_sig):
         return TokenVerifyResult(valid=False, reason="Invalid QR signature.")
 
-    if int(time.time()) > expiry:
+    if expiry != 0 and int(time.time()) > expiry:
         return TokenVerifyResult(valid=False, reason="This QR code has expired. Please scan the current code.")
 
     return TokenVerifyResult(valid=True, checkpoint_id=checkpoint_id)
