@@ -89,6 +89,8 @@ class SettingsPayload(BaseModel):
 DEFAULT_SETTINGS = {
     "required_stamps": REQUIRED_STAMPS,
     "priority_draw_min_stamps": PRIORITY_DRAW_MIN_STAMPS,
+    "points_per_compulsory_stamp": 10,
+    "points_per_bonus_stamp": 20,
     "rate_limit_seconds": 60,
     "default_geofence_radius_m": 40,
     "default_max_accuracy_m": 50,
@@ -100,20 +102,124 @@ DEFAULT_SETTINGS = {
 
 
 # =========================================================================
+# Settings helper + certificate auto/manual generation
+# =========================================================================
+async def _get_setting(conn, key: str, default):
+    """Reads one admin_settings value, falling back to DEFAULT_SETTINGS /
+    a caller-supplied default when Settings hasn't been saved yet. This is
+    what makes "Configure compulsory stamps" and "Configure reward points"
+    on the Settings screen actually take effect everywhere, instead of the
+    old hard-coded REQUIRED_STAMPS / PRIORITY_DRAW_MIN_STAMPS constants."""
+    row = await conn.fetchrow('SELECT value FROM admin_settings WHERE key=$1', key)
+    if not row:
+        return default
+    val = row['value']
+    return json.loads(val) if isinstance(val, str) else val
+
+
+async def _maybe_issue_certificate(conn, student_id: str, staff_name: Optional[str] = None, force: bool = False):
+    """Certificate generation facility — automatic AND manual.
+
+    Automatic: called from review_stamp() every time a stamp is approved,
+    so the moment a student's approved-compulsory-stamp count crosses the
+    configured `required_stamps` threshold, a certificate row is created
+    right there — no separate job or button needed.
+
+    Manual: called with force=True from the "Generate Certificate" button
+    (single student) or the "Sync Eligible Certificates" button (catches
+    up anyone who reached eligibility a different way, e.g. a manual
+    stamp override, or before this feature existed).
+
+    No-ops (returns None) if a certificate already exists for the student,
+    or if not yet eligible and force=False.
+    """
+    existing = await conn.fetchval('SELECT id FROM certificates WHERE student_id=$1', student_id)
+    if existing:
+        return None
+
+    required = int(await _get_setting(conn, 'required_stamps', REQUIRED_STAMPS))
+    priority_min = int(await _get_setting(conn, 'priority_draw_min_stamps', PRIORITY_DRAW_MIN_STAMPS))
+    pts_compulsory = float(await _get_setting(conn, 'points_per_compulsory_stamp', 10))
+    pts_bonus = float(await _get_setting(conn, 'points_per_bonus_stamp', 20))
+
+    counts = await conn.fetchrow('''
+        SELECT s.passport_id,
+               COUNT(st.id) FILTER (WHERE st.status='approved' AND NOT c.is_bonus) AS verified,
+               COUNT(st.id) FILTER (WHERE st.status='approved' AND c.is_bonus) AS bonus
+        FROM students s
+        LEFT JOIN stamps st ON st.student_id = s.id
+        LEFT JOIN checkpoints c ON c.id = st.checkpoint_id
+        WHERE s.id = $1 GROUP BY s.id, s.passport_id
+    ''', student_id)
+    if not counts:
+        return None
+
+    verified, bonus = counts['verified'] or 0, counts['bonus'] or 0
+    if not force and verified < required:
+        return None
+
+    total = verified + bonus
+    serial_number = f"{counts['passport_id']}-CERT"
+    reward_points = round(verified * pts_compulsory + bonus * pts_bonus, 2)
+    priority_draw_eligible = total >= priority_min
+
+    row = await conn.fetchrow('''
+        INSERT INTO certificates(student_id, serial_number, total_stamps, prize_eligible,
+                                  priority_draw_eligible, reward_points, issued_at)
+        VALUES($1,$2,$3,true,$4,$5,now()) RETURNING *
+    ''', student_id, serial_number, total, priority_draw_eligible, reward_points)
+    await audit(
+        'certificate_manual_issue' if force else 'certificate_auto_issue',
+        'certificate', serial_number,
+        {'passport_id': counts['passport_id'], 'total_stamps': total, 'reward_points': reward_points},
+        staff_name,
+    )
+    return dict(row)
+
+
+# =========================================================================
 # Dashboard
 # =========================================================================
 @router.get('/dashboard')
 async def dashboard():
     pool = await get_pool()
     async with pool.acquire() as conn:
+        required_stamps = int(await _get_setting(conn, 'required_stamps', REQUIRED_STAMPS))
+        priority_draw_min = int(await _get_setting(conn, 'priority_draw_min_stamps', PRIORITY_DRAW_MIN_STAMPS))
+
         row = await conn.fetchrow('''
+            WITH progress AS (
+                SELECT s.id, s.registration_status,
+                       COUNT(st.id) FILTER (WHERE st.status='approved' AND NOT c.is_bonus) AS verified,
+                       COUNT(st.id) FILTER (WHERE st.status='approved' AND c.is_bonus) AS bonus
+                FROM students s
+                LEFT JOIN stamps st ON st.student_id = s.id
+                LEFT JOIN checkpoints c ON c.id = st.checkpoint_id
+                GROUP BY s.id, s.registration_status
+            )
             SELECT
               (SELECT COUNT(*) FROM students) AS registrations,
               (SELECT COUNT(*) FROM students WHERE registration_status='active') AS active_passports,
+              -- Active passports TODAY: distinct active students with at least
+              -- one successful scan today (i.e. actually out on the floor today).
+              (SELECT COUNT(DISTINCT sl.student_id) FROM scan_logs sl
+                 JOIN students s2 ON s2.id = sl.student_id AND s2.registration_status='active'
+                 WHERE sl.result='success' AND sl.created_at::date = CURRENT_DATE) AS active_passports_today,
               (SELECT COUNT(*) FROM students WHERE created_at::date = CURRENT_DATE) AS registrations_today,
               (SELECT COUNT(*) FROM students s WHERE NOT EXISTS (
                   SELECT 1 FROM certificates ce WHERE ce.student_id = s.id
               )) AS passports_in_queue,
+              -- Completed passports: scanned + got all `required_stamps`
+              -- (default 10 of 10) compulsory checkpoints approved.
+              (SELECT COUNT(*) FROM progress WHERE verified >= $1) AS completed_passports,
+              -- Certificate eligible: same condition, computed live from
+              -- stamps (not from the certificates table), so this number is
+              -- correct even a moment before the certificate row is issued.
+              (SELECT COUNT(*) FROM progress WHERE verified >= $1) AS certificate_eligible,
+              -- Prize draw eligible ("bonus wale"): compulsory done AND
+              -- total (compulsory+bonus) stamps clears the configured
+              -- priority-draw threshold (default 12).
+              (SELECT COUNT(*) FROM progress WHERE verified >= $1 AND (verified + bonus) >= $2) AS prize_draw_eligible,
               (SELECT COUNT(*) FROM stamps) AS checkpoint_responses_total,
               (SELECT COUNT(*) FROM stamps WHERE status='approved') AS approved_stamps,
               (SELECT COUNT(*) FROM stamps WHERE status IN ('pending','manual')) AS pending_reviews,
@@ -126,7 +232,8 @@ async def dashboard():
               (SELECT COUNT(*) FROM scan_logs WHERE created_at::date = CURRENT_DATE) AS scans_today,
               (SELECT COUNT(*) FROM scan_logs WHERE result='failed' AND created_at::date = CURRENT_DATE) AS failed_scans_today,
               (SELECT COUNT(*) FROM feedback_responses) AS feedback_responses
-        ''')
+        ''', required_stamps, priority_draw_min)
+
         checkpoints = await conn.fetch('''
             SELECT c.id, c.stamp_number, c.is_bonus, c.hall_zone, c.theme, c.is_active,
                    COUNT(s.id) FILTER (WHERE s.status='approved') AS approved,
@@ -139,10 +246,38 @@ async def dashboard():
             SELECT COALESCE(route_colour,'unassigned') AS route_colour, COUNT(*) AS students
             FROM students GROUP BY route_colour ORDER BY 1
         ''')
+        # Hall-wise footfall, right on the dashboard (full breakdown still
+        # lives on the Footfall & Routes screen) — top 10 busiest halls.
+        hall_wise = await conn.fetch('''
+            SELECT c.hall_zone, c.theme, c.is_bonus,
+                   COUNT(sl.id) FILTER (WHERE sl.result='success') AS successful_scans,
+                   COUNT(sl.id) FILTER (WHERE sl.result='failed') AS failed_scans
+            FROM checkpoints c LEFT JOIN scan_logs sl ON sl.checkpoint_id = c.id
+            GROUP BY c.id, c.hall_zone, c.theme, c.is_bonus
+            ORDER BY successful_scans DESC LIMIT 10
+        ''')
+        # School/college-wise participation, top 8 by completions (full
+        # list still lives on the Institutions screen).
+        top_institutions = await conn.fetch('''
+            WITH per_student AS (
+                SELECT s.id, s.institution_name,
+                       COUNT(st.id) FILTER (WHERE st.status='approved' AND NOT c.is_bonus) AS verified
+                FROM students s
+                LEFT JOIN stamps st ON st.student_id = s.id
+                LEFT JOIN checkpoints c ON c.id = st.checkpoint_id
+                GROUP BY s.id, s.institution_name
+            )
+            SELECT institution_name, COUNT(*) AS registrations,
+                   COUNT(*) FILTER (WHERE verified >= $1) AS completions
+            FROM per_student GROUP BY institution_name
+            ORDER BY completions DESC, registrations DESC LIMIT 8
+        ''', required_stamps)
     return {
         'metrics': dict(row),
         'checkpoints': [dict(x) for x in checkpoints],
         'route_load': [dict(x) for x in route_load],
+        'hall_wise': [dict(x) for x in hall_wise],
+        'top_institutions': [dict(x) for x in top_institutions],
     }
 
 
@@ -187,26 +322,58 @@ async def student_detail(passport_id: str):
         scans = await conn.fetch('''
           SELECT * FROM scan_logs WHERE student_id=$1 ORDER BY created_at DESC LIMIT 100
         ''', student['id'])
+        status_history = await conn.fetch('''
+          SELECT * FROM student_status_history WHERE student_id=$1 ORDER BY created_at DESC LIMIT 50
+        ''', student['id'])
+        pts_compulsory = float(await _get_setting(conn, 'points_per_compulsory_stamp', 10))
+        pts_bonus = float(await _get_setting(conn, 'points_per_bonus_stamp', 20))
+        required_stamps = int(await _get_setting(conn, 'required_stamps', REQUIRED_STAMPS))
+
+    verified_ct = sum(1 for x in stamps if x['status'] == 'approved' and not x['is_bonus'])
+    bonus_ct = sum(1 for x in stamps if x['status'] == 'approved' and x['is_bonus'])
     return {
         'student': dict(student),
         'stamps': [dict(x) for x in stamps],
         'certificate': dict(cert) if cert else None,
         'feedback': dict(feedback) if feedback else None,
         'scan_history': [dict(x) for x in scans],
+        'status_history': [dict(x) for x in status_history],
+        'reward_points': round(verified_ct * pts_compulsory + bonus_ct * pts_bonus, 2),
+        'certificate_eligible': verified_ct >= required_stamps,
     }
 
 @router.patch('/students/{passport_id}/status')
 async def set_student_status(passport_id: str, payload: StudentStatusPayload):
     pool = await get_pool()
     async with pool.acquire() as conn:
+        before = await conn.fetchrow('SELECT id, registration_status FROM students WHERE passport_id=$1', passport_id)
+        if not before: raise HTTPException(404, 'Student not found.')
         row = await conn.fetchrow(
             'UPDATE students SET registration_status=$2, updated_at=now() WHERE passport_id=$1 RETURNING *',
             passport_id, payload.status,
         )
+        # Explicit, queryable record of every status change — kept in its
+        # own table (student_status_history) in addition to the general
+        # admin_audit_logs entry below, so the Student Passport screen can
+        # show a clean "status changed" timeline for just this student.
+        await conn.execute('''
+            INSERT INTO student_status_history(student_id, passport_id, old_status, new_status, reason, changed_by)
+            VALUES($1,$2,$3,$4,$5,$6)
+        ''', before['id'], passport_id, before['registration_status'], payload.status,
+        payload.reason, payload.staff_name or 'Admin Portal')
     if not row: raise HTTPException(404, 'Student not found.')
     await audit('student_status', 'student', passport_id,
                 {'status': payload.status, 'reason': payload.reason}, payload.staff_name)
     return dict(row)
+
+@router.get('/students/{passport_id}/status-history')
+async def student_status_history(passport_id: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            'SELECT * FROM student_status_history WHERE passport_id=$1 ORDER BY created_at DESC', passport_id,
+        )
+    return {'items': [dict(x) for x in rows]}
 
 
 # =========================================================================
@@ -450,9 +617,19 @@ async def review_stamp(stamp_id: str, payload: ReviewPayload):
     async with pool.acquire() as conn:
         row=await conn.fetchrow('''UPDATE stamps SET status=$2, reviewed_at=now(), reviewed_reason=$3, reviewed_by=$4
                                    WHERE id=$1 RETURNING *''', stamp_id,new_status,payload.reason,staff)
-    if not row: raise HTTPException(404,'Stamp review record not found.')
+        if not row: raise HTTPException(404,'Stamp review record not found.')
+        cert = None
+        if new_status == 'approved':
+            # Automatic certificate generation: this is the moment a stamp
+            # actually counts toward completion (stamps sit as 'pending'
+            # until an admin approves them here), so this is where a
+            # student can newly cross the required-stamps threshold.
+            cert = await _maybe_issue_certificate(conn, str(row['student_id']), staff)
     await audit('stamp_review','stamp',stamp_id,{'status':new_status,'reason':payload.reason},staff)
-    return dict(row)
+    result = dict(row)
+    if cert:
+        result['certificate_issued'] = cert
+    return result
 
 
 # =========================================================================
@@ -534,6 +711,44 @@ async def certificates(status: Optional[str] = Query(default=None, pattern='^(re
             {where} ORDER BY c.issued_at DESC LIMIT 1000
         ''')
     return {'items': [dict(x) for x in rows]}
+
+@router.post('/certificates/sync')
+async def sync_certificates(staff_name: Optional[str] = Query(default=None)):
+    """Manual/catch-up half of the certificate generation facility: scans
+    every student who doesn't have a certificate yet and issues one for
+    anyone who already qualifies (e.g. eligibility reached via a manual
+    stamp override, or students who completed before this feature
+    existed). Safe to click any time — no-ops for anyone not eligible."""
+    pool = await get_pool()
+    issued = []
+    async with pool.acquire() as conn:
+        candidates = await conn.fetch('''
+            SELECT s.id FROM students s
+            WHERE NOT EXISTS (SELECT 1 FROM certificates ce WHERE ce.student_id = s.id)
+        ''')
+        for c in candidates:
+            cert = await _maybe_issue_certificate(conn, str(c['id']), staff_name)
+            if cert:
+                issued.append(cert)
+    return {'issued_count': len(issued), 'issued': issued}
+
+@router.post('/certificates/generate/{passport_id}')
+async def generate_certificate(passport_id: str, staff_name: Optional[str] = Query(default=None)):
+    """Manual, single-student certificate generation — for a staff member
+    who wants to force-issue one right now (e.g. a student is at the
+    Redemption Desk and eligibility hasn't been auto-picked-up yet).
+    force=True inside _maybe_issue_certificate means this still works even
+    for a student who is one review-approval away from the normal
+    threshold, e.g. after a manual answer override."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        student = await conn.fetchrow('SELECT id FROM students WHERE passport_id=$1', passport_id)
+        if not student: raise HTTPException(404, 'Student not found.')
+        existing = await conn.fetchval('SELECT id FROM certificates WHERE student_id=$1', student['id'])
+        if existing: raise HTTPException(409, 'Certificate already issued for this student.')
+        cert = await _maybe_issue_certificate(conn, str(student['id']), staff_name, force=True)
+    if not cert: raise HTTPException(500, 'Could not generate certificate.')
+    return cert
 
 @router.post('/certificates/{certificate_id}/resend')
 async def resend_certificate(certificate_id: str):
@@ -710,7 +925,7 @@ async def export_dataset(dataset: str):
                                         FROM feedback_responses f JOIN students s ON s.id=f.student_id ORDER BY f.created_at''')
         elif dataset == 'redemptions':
             rows = await conn.fetch('''SELECT s.passport_id, s.full_name, s.institution_name, c.serial_number, c.total_stamps,
-                                        c.prize_eligible, c.priority_draw_eligible, c.redeemed, c.redeemed_at, c.redeemed_by_staff_id
+                                        c.reward_points, c.prize_eligible, c.priority_draw_eligible, c.redeemed, c.redeemed_at, c.redeemed_by_staff_id
                                         FROM certificates c JOIN students s ON s.id=c.student_id ORDER BY c.issued_at''')
         elif dataset == 'checkpoints':
             rows = await conn.fetch('SELECT stamp_number, is_bonus, hall_zone, theme, answer_type, is_active, geofence_radius_m, max_accuracy_m FROM checkpoints ORDER BY is_bonus, stamp_number')

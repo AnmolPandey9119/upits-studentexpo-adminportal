@@ -57,11 +57,27 @@ async def run_schema(schema_path: str = "admin_schema.sql"):
 
     NOTE: this ALTERs the students/checkpoints/stamps tables, so the
     student backend must have run its own schema.sql at least once
-    already (that's what creates those tables in the first place)."""
+    already (that's what creates those tables in the first place).
+
+    Deliberately non-fatal: if this raises (e.g. a base table like
+    `certificates` doesn't exist yet in a fresh DB, or a future schema
+    edit has a typo), we log it and let the app keep starting rather than
+    crashing the whole admin-backend process. A schema problem should
+    only break the specific screens that depend on the missing
+    table/column — not turn every screen (Dashboard, Students,
+    Checkpoints...) into "Failed to fetch" because the server never
+    came up at all.
+    """
     pool = await get_pool()
     with open(schema_path, "r") as f:
         sql = f.read()
-    async with pool.acquire() as conn:
-        await conn.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
-        await conn.execute(sql)
-    print("Admin schema applied successfully.")
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
+            await conn.execute(sql)
+        print("Admin schema applied successfully.")
+    except Exception as exc:
+        print(f"WARNING: admin_schema.sql did not fully apply ({exc!r}). "
+              f"Server is still starting — but screens relying on the "
+              f"missing table/column will error until this is fixed and "
+              f"the server is restarted.")

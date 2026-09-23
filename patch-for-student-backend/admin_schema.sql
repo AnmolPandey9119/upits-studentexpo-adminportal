@@ -20,6 +20,12 @@ ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS max_accuracy_m INT DEFAULT 50;
 ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS qr_rotated_at TIMESTAMPTZ;
 ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS qr_expires_seconds INT DEFAULT 600;
 
+-- Fallback manual entry code (BRD section 12: "QR scanner using mobile
+-- camera, plus fallback code entry for technical failure"). One unique
+-- 6-character alphanumeric code per checkpoint, printed below its QR.
+ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS manual_code VARCHAR(6);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_checkpoints_manual_code ON checkpoints(manual_code) WHERE manual_code IS NOT NULL;
+
 ALTER TABLE stamps ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
 ALTER TABLE stamps ADD COLUMN IF NOT EXISTS reviewed_reason TEXT;
 ALTER TABLE stamps ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(80);
@@ -61,3 +67,34 @@ CREATE TABLE IF NOT EXISTS admin_settings (
 -- (right-to-erasure) without breaking the stamp/certificate history the
 -- event still needs for reporting.
 ALTER TABLE students ADD COLUMN IF NOT EXISTS data_erased_at TIMESTAMPTZ;
+
+-- Reward-points snapshot at the moment a certificate is issued (points
+-- per compulsory/bonus stamp are configurable in admin_settings and can
+-- change over the event, so we freeze the value earned at issuance time
+-- rather than recomputing it later from a setting that may have moved).
+-- Guarded with to_regclass so this file never hard-fails (and take the
+-- whole admin-backend down) if `certificates` hasn't been created yet by
+-- the student backend's own schema.
+DO $$
+BEGIN
+  IF to_regclass('public.certificates') IS NOT NULL THEN
+    ALTER TABLE certificates ADD COLUMN IF NOT EXISTS reward_points NUMERIC(10,2) DEFAULT 0;
+  END IF;
+END $$;
+
+-- Explicit, queryable history of every passport status change (active
+-- <-> blocked), separate from the general admin_audit_logs table so the
+-- Student Passport screen can show "status changed" history on its own
+-- without filtering the whole audit log.
+CREATE TABLE IF NOT EXISTS student_status_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id UUID REFERENCES students(id) ON DELETE CASCADE,
+    passport_id VARCHAR(20),
+    old_status VARCHAR(20),
+    new_status VARCHAR(20) NOT NULL,
+    reason TEXT,
+    changed_by VARCHAR(120),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_status_history_student ON student_status_history(student_id);
+CREATE INDEX IF NOT EXISTS idx_status_history_passport ON student_status_history(passport_id);

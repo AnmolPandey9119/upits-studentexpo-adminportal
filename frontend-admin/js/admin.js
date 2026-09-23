@@ -189,16 +189,24 @@ async function renderDashboard() {
       <div class="metric"><span>Passports Issued</span><strong>${n(m.certificates)}</strong></div>
       <div class="metric saffron"><span>Passports In Queue</span><strong>${n(m.passports_in_queue)}</strong></div>
       <div class="metric green"><span>Active Passports</span><strong>${n(m.active_passports)}</strong></div>
+      <div class="metric green"><span>Active Passports Today</span><strong>${n(m.active_passports_today)}</strong></div>
       <div class="metric saffron"><span>Registered Today</span><strong>${n(m.registrations_today)}</strong></div>
       <div class="metric gold"><span>Scans Today</span><strong>${n(m.scans_today)}</strong></div>
+      <div class="metric green"><span>Completed Passports (10/10)</span><strong>${n(m.completed_passports)}</strong></div>
+      <div class="metric gold"><span>Certificate Eligible</span><strong>${n(m.certificate_eligible)}</strong></div>
+      <div class="metric gold"><span>Prize Draw Eligible (Bonus)</span><strong>${n(m.prize_draw_eligible)}</strong></div>
       <div class="metric"><span>Checkpoint Responses (DB)</span><strong>${n(m.checkpoint_responses_total)}</strong></div>
       <div class="metric green"><span>Approved Stamps</span><strong>${n(m.approved_stamps)}</strong></div>
       <div class="metric saffron"><span>Pending Review</span><strong>${n(m.pending_reviews)}</strong></div>
       <div class="metric danger"><span>Rejected Stamps</span><strong>${n(m.rejected_stamps)}</strong></div>
       <div class="metric danger"><span>Fraud Flagged</span><strong>${n(m.fraud_flagged_stamps)}</strong></div>
-      <div class="metric green"><span>Redeemed</span><strong>${n(m.redeemed)}</strong></div>
+      <div class="metric green"><span>Redeem Count</span><strong>${n(m.redeemed)}</strong></div>
       <div class="metric gold"><span>Prize Eligible</span><strong>${n(m.prize_eligible)}</strong></div>
       <div class="metric gold"><span>Priority Draw Eligible</span><strong>${n(m.priority_draw_eligible)}</strong></div>
+    </div>
+    <div class="section-head" style="margin-top:4px">
+      <div><p class="muted" style="margin:0;font-size:12px">Certificates auto-issue the moment a student's 10th compulsory stamp is approved. Use Sync if anyone eligible is still missing one (e.g. after a manual override).</p></div>
+      <button class="btn small" onclick="syncCertificatesFromDashboard()">Sync Eligible Certificates</button>
     </div>
     <div class="grid-2">
       <div class="card">
@@ -224,7 +232,30 @@ async function renderDashboard() {
         <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eee9df"><span class="muted">Feedback responses</span><b>${n(m.feedback_responses)}</b></div>
         <div style="display:flex;justify-content:space-between;padding:9px 0"><span class="muted">Student directory</span><button class="btn small" onclick="loadSection('students')">Open →</button></div>
       </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><h3>Hall-Wise Footfall</h3><button class="btn small" onclick="loadSection('footfall')">Full View →</button></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Hall</th><th>Theme</th><th>Success</th><th>Failed</th></tr></thead><tbody>
+          ${(d.hall_wise || []).map((h) => `<tr><td>${esc(h.hall_zone)}</td><td>${esc(h.theme)}</td>
+            <td><span class="status ok">${n(h.successful_scans)}</span></td><td><span class="status bad">${n(h.failed_scans)}</span></td></tr>`).join("") || `<tr><td colspan="4" class="muted">No scans yet.</td></tr>`}
+        </tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>School / College Participation</h3><button class="btn small" onclick="loadSection('institutions')">Full View →</button></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Institution</th><th>Registrations</th><th>Completions</th></tr></thead><tbody>
+          ${(d.top_institutions || []).map((i) => `<tr><td>${esc(i.institution_name)}</td><td>${n(i.registrations)}</td><td><span class="status ok">${n(i.completions)}</span></td></tr>`).join("") || `<tr><td colspan="3" class="muted">No institutions yet.</td></tr>`}
+        </tbody></table></div>
+      </div>
     </div>`;
+}
+
+async function syncCertificatesFromDashboard() {
+  try {
+    const d = await api("/api/admin/certificates/sync" + (staffName() ? "?staff_name=" + encodeURIComponent(staffName()) : ""), { method: "POST" });
+    toast(d.issued_count ? `${d.issued_count} certificate(s) generated.` : "Everyone eligible already has a certificate.");
+    loadSection("dashboard");
+  } catch (x) { toast(x.message, true); }
 }
 
 // =================================================================
@@ -268,12 +299,15 @@ async function openStudent(passportId) {
       <div><span>District / City</span><b>${esc(s.district_city)}</b></div>
       <div><span>Category</span><b>${esc(s.student_category)} — ${esc(s.class_or_course)}</b></div>
       <div><span>Route</span><b>${esc(s.route_colour || "—")}</b></div>
+      <div><span>Reward Points</span><b>${n(d.reward_points)}</b></div>
+      <div><span>Certificate Eligible</span><b>${d.certificate_eligible ? "Yes" : "Not yet"}</b></div>
     </div>
-    <div style="display:flex;gap:8px;margin:10px 0 16px">
+    <div style="display:flex;gap:8px;margin:10px 0 16px;flex-wrap:wrap">
       <button class="btn small" onclick="setStudentStatus('${s.passport_id}','${s.registration_status === "active" ? "blocked" : "active"}')">
         ${s.registration_status === "active" ? "Block Passport" : "Unblock Passport"}
       </button>
       <button class="btn small" onclick="closeStudentModal();loadSection('consent')">Open Consent & Data</button>
+      ${!d.certificate ? `<button class="btn small ${d.certificate_eligible ? "primary" : ""}" onclick="generateCertificateForStudent('${s.passport_id}')">Generate Certificate</button>` : ""}
     </div>
     <h3>Stamps (${d.stamps.length})</h3>
     <div class="table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Hall</th><th>Status</th><th>Fraud</th><th>Time</th></tr></thead><tbody>
@@ -283,9 +317,23 @@ async function openStudent(passportId) {
     </tbody></table></div>
     ${d.certificate ? `<h3 style="margin-top:16px">Certificate</h3><div class="detail-grid">
       <div><span>Serial</span><b>${esc(d.certificate.serial_number)}</b></div>
+      <div><span>Reward Points</span><b>${n(d.certificate.reward_points)}</b></div>
       <div><span>Redeemed</span><b>${d.certificate.redeemed ? "Yes — " + fmt(d.certificate.redeemed_at) : "Not yet"}</b></div>
-    </div>` : ""}`;
+    </div>` : ""}
+    ${d.status_history && d.status_history.length ? `<h3 style="margin-top:16px">Status Change History</h3>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>From</th><th>To</th><th>Reason</th><th>By</th><th>Time</th></tr></thead><tbody>
+      ${d.status_history.map((h) => `<tr><td>${esc(h.old_status || "—")}</td><td><span class="status ${h.new_status === "active" ? "ok" : "bad"}">${esc(h.new_status)}</span></td>
+        <td style="white-space:normal;max-width:220px">${esc(h.reason || "—")}</td><td>${esc(h.changed_by || "—")}</td><td>${fmt(h.created_at)}</td></tr>`).join("")}
+    </tbody></table></div>` : ""}`;
   $("studentModal").classList.remove("hidden");
+}
+
+async function generateCertificateForStudent(passportId) {
+  try {
+    await api(`/api/admin/certificates/generate/${encodeURIComponent(passportId)}` + (staffName() ? "?staff_name=" + encodeURIComponent(staffName()) : ""), { method: "POST" });
+    toast(`Certificate generated for ${passportId}.`);
+    openStudent(passportId);
+  } catch (x) { toast(x.message, true); }
 }
 function closeStudentModal() { $("studentModal").classList.add("hidden"); }
 
@@ -595,16 +643,42 @@ async function renderFraud() {
 async function renderCertificates(status) {
   const d = await api("/api/admin/certificates" + (status ? "?status=" + status : ""));
   $("content").innerHTML = `
-    <div class="section-head"><div><h3>Certificate Management</h3><p>Serial numbers, verification tokens and re-send.</p></div><button class="btn small" onclick="renderCertificates('${status || ""}')">Refresh</button></div>
+    <div class="section-head"><div><h3>Certificate Management</h3><p>Serial numbers, reward points, verification tokens and re-send. Certificates auto-issue the instant a student's 10th compulsory stamp is approved — use Sync below to catch anyone eligible who is still missing one.</p></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn small" onclick="renderCertificates('${status || ""}')">Refresh</button>
+        <button class="btn primary small" onclick="syncCertificates('${status || ""}')">Sync Eligible Certificates</button>
+      </div>
+    </div>
     <div class="pill-tabs">
       ${[["", "All"], ["not_redeemed", "Not Redeemed"], ["redeemed", "Redeemed"], ["prize_eligible", "Prize Eligible"]].map(([v, l]) => `<button class="${v === (status || "") ? "active" : ""}" onclick="renderCertificates('${v}')">${l}</button>`).join("")}
     </div>
-    <div class="card table-wrap"><table class="data-table"><thead><tr><th>Serial</th><th>Passport</th><th>Name</th><th>Stamps</th><th>Prize</th><th>Priority Draw</th><th>Redeemed</th><th></th></tr></thead><tbody>
+    <div class="card" style="margin-bottom:14px">
+      <div class="search"><input id="genCertPassport" placeholder="Passport ID to manually generate a certificate for…" onkeydown="if(event.key==='Enter')generateCertificateManually()"><button class="btn" onclick="generateCertificateManually()">Generate Certificate</button></div>
+    </div>
+    <div class="card table-wrap"><table class="data-table"><thead><tr><th>Serial</th><th>Passport</th><th>Name</th><th>Stamps</th><th>Points</th><th>Prize</th><th>Priority Draw</th><th>Redeemed</th><th></th></tr></thead><tbody>
       ${d.items.map((c) => `<tr><td class="mono">${esc(c.serial_number)}</td><td>${esc(c.passport_id)}</td><td>${esc(c.full_name)}</td>
-        <td>${n(c.total_stamps)}</td><td>${c.prize_eligible ? "Yes" : "—"}</td><td>${c.priority_draw_eligible ? "Yes" : "—"}</td>
+        <td>${n(c.total_stamps)}</td><td>${n(c.reward_points)}</td><td>${c.prize_eligible ? "Yes" : "—"}</td><td>${c.priority_draw_eligible ? "Yes" : "—"}</td>
         <td><span class="status ${c.redeemed ? "ok" : "warn"}">${c.redeemed ? fmt(c.redeemed_at) : "Pending"}</span></td>
-        <td><button class="btn small" onclick="resendCertificate('${c.id}')">Re-send</button></td></tr>`).join("") || `<tr><td colspan="8" class="muted">No certificates issued yet.</td></tr>`}
+        <td><button class="btn small" onclick="resendCertificate('${c.id}')">Re-send</button></td></tr>`).join("") || `<tr><td colspan="9" class="muted">No certificates issued yet.</td></tr>`}
     </tbody></table></div>`;
+}
+
+async function syncCertificates(status) {
+  try {
+    const d = await api("/api/admin/certificates/sync" + (staffName() ? "?staff_name=" + encodeURIComponent(staffName()) : ""), { method: "POST" });
+    toast(d.issued_count ? `${d.issued_count} certificate(s) generated.` : "Everyone eligible already has a certificate.");
+    renderCertificates(status);
+  } catch (x) { toast(x.message, true); }
+}
+
+async function generateCertificateManually() {
+  const pid = ($("genCertPassport").value || "").trim();
+  if (!pid) return;
+  try {
+    await api(`/api/admin/certificates/generate/${encodeURIComponent(pid)}` + (staffName() ? "?staff_name=" + encodeURIComponent(staffName()) : ""), { method: "POST" });
+    toast(`Certificate generated for ${pid}.`);
+    renderCertificates();
+  } catch (x) { toast(x.message, true); }
 }
 
 async function resendCertificate(id) {
@@ -804,8 +878,10 @@ async function renderSettings() {
   const d = await api("/api/admin/settings");
   const v = d.values;
   const fields = [
-    ["required_stamps", "Required Stamps for Certificate", "number"],
+    ["required_stamps", "Compulsory Stamps Required for Certificate", "number"],
     ["priority_draw_min_stamps", "Priority Draw Minimum Stamps", "number"],
+    ["points_per_compulsory_stamp", "Reward Points per Compulsory Stamp", "number"],
+    ["points_per_bonus_stamp", "Reward Points per Bonus Stamp", "number"],
     ["rate_limit_seconds", "Rate Limit Between Stamps (sec)", "number"],
     ["default_geofence_radius_m", "Default Geofence Radius (m)", "number"],
     ["default_max_accuracy_m", "Default Max GPS Accuracy (m)", "number"],
@@ -830,8 +906,8 @@ async function renderSettings() {
 }
 
 async function saveSettings() {
-  const keys = ["required_stamps", "priority_draw_min_stamps", "rate_limit_seconds", "default_geofence_radius_m", "default_max_accuracy_m", "default_qr_expires_seconds", "event_start_date", "event_end_date", "default_language"];
-  const numeric = new Set(["required_stamps", "priority_draw_min_stamps", "rate_limit_seconds", "default_geofence_radius_m", "default_max_accuracy_m", "default_qr_expires_seconds"]);
+  const keys = ["required_stamps", "priority_draw_min_stamps", "points_per_compulsory_stamp", "points_per_bonus_stamp", "rate_limit_seconds", "default_geofence_radius_m", "default_max_accuracy_m", "default_qr_expires_seconds", "event_start_date", "event_end_date", "default_language"];
+  const numeric = new Set(["required_stamps", "priority_draw_min_stamps", "points_per_compulsory_stamp", "points_per_bonus_stamp", "rate_limit_seconds", "default_geofence_radius_m", "default_max_accuracy_m", "default_qr_expires_seconds"]);
   const values = {};
   keys.forEach((k) => { const el = $("set_" + k); if (el) values[k] = numeric.has(k) ? Number(el.value) : el.value; });
   await api("/api/admin/settings", { method: "PUT", body: JSON.stringify({ values }) });
