@@ -247,6 +247,116 @@ async def update_checkpoint(checkpoint_id: str, payload: CheckpointPayload):
     await audit('checkpoint_update','checkpoint',checkpoint_id)
     return dict(row)
 
+DEFAULT_CHECKPOINTS = [
+    # Compulsory missions — BRD section 5. stamp_number 1-10.
+    dict(stamp_number=1, is_bonus=False, hall_zone='Hall 1 — UP / Made in India Entry Checkpoint',
+         theme='Uttar Pradesh Manufacturing',
+         question_text='Find a product manufactured in Uttar Pradesh. What is the product, and which district is it associated with?',
+         answer_type='short_text', answer_options=None, min_answer_length=3),
+    dict(stamp_number=2, is_bonus=False, hall_zone='Hall 3 — ODOP / GI Product Checkpoint',
+         theme='ODOP and GI',
+         question_text='Identify one ODOP or GI product you saw, and name it. Then select its category below.',
+         answer_type='dropdown',
+         answer_options=['Handicraft', 'Textile', 'Food', 'Leather', 'Home décor', 'Other'],
+         min_answer_length=0),
+    dict(stamp_number=3, is_bonus=False, hall_zone='Hall 5 — Agriculture / Food Processing Checkpoint',
+         theme='Agriculture and Food',
+         question_text='Name one value-added agriculture or food product displayed here.',
+         answer_type='short_text', answer_options=None, min_answer_length=2),
+    dict(stamp_number=4, is_bonus=False, hall_zone='Hall 7 — Innovation / Technology Checkpoint',
+         theme='Innovation and Technology',
+         question_text='What new technology or innovation did you discover here?',
+         answer_type='dropdown',
+         answer_options=['AI', 'Robotics', 'Electronics', 'Manufacturing', 'Clean technology', 'Other'],
+         min_answer_length=0),
+    dict(stamp_number=5, is_bonus=False, hall_zone='Hall 9 — Green Product Checkpoint',
+         theme='Sustainability',
+         question_text='Find an eco-friendly product or sustainable business practice. What makes it eco-friendly?',
+         answer_type='short_text', answer_options=None, min_answer_length=15),
+    dict(stamp_number=6, is_bonus=False, hall_zone='Hall 10/11 — International Participation Checkpoint',
+         theme='World Cultures / International Trade',
+         question_text='Visit an international/partner-country exhibitor. Which country or region did you visit, and what product/sector did you see?',
+         answer_type='dropdown',
+         answer_options=['Japan', 'Vietnam', 'Russia', 'Singapore', 'Austria', 'Belarus', 'Other'],
+         min_answer_length=0),
+    dict(stamp_number=7, is_bonus=False, hall_zone='Hall 12 — Entrepreneurship Checkpoint',
+         theme='Entrepreneurship',
+         question_text='Speak to an exhibitor/entrepreneur. What problem does their product or service solve?',
+         answer_type='short_text', answer_options=None, min_answer_length=20),
+    dict(stamp_number=8, is_bonus=False, hall_zone='Hall 14 — Main Entry / Themed Activity Zone',
+         theme='Global Trade',
+         question_text='Complete this statement: "This product can reach international markets because…"',
+         answer_type='short_text', answer_options=None, min_answer_length=20),
+    dict(stamp_number=9, is_bonus=False, hall_zone='Hall 15/16 — Career Checkpoint',
+         theme='Careers in Trade',
+         question_text='Which career area interested you most?',
+         answer_type='multiple_choice',
+         answer_options=['Export sales', 'Manufacturing', 'Design', 'Logistics', 'E-commerce', 'Technology', 'Entrepreneurship', 'Marketing', 'Other'],
+         min_answer_length=0),
+    dict(stamp_number=10, is_bonus=False, hall_zone='Hall 17 — Reflection Checkpoint',
+         theme='Learning Reflection',
+         question_text='Name one product you would recommend to a friend and explain why.',
+         answer_type='short_text', answer_options=None, min_answer_length=25),
+    # Bonus missions — BRD section 6. stamp_number 1-5 (is_bonus=True).
+    dict(stamp_number=1, is_bonus=True, hall_zone='Hall 2 — Official Programme / Knowledge-Session Area',
+         theme='Knowledge Session',
+         question_text='Attend a knowledge session or activity. Select the topic you attended.',
+         answer_type='dropdown',
+         answer_options=['Science Quiz', 'Career Counselling & Business Expo', 'Yoga & Mental Health', 'Robotics & AI', 'MUN', 'Other official session'],
+         min_answer_length=0),
+    dict(stamp_number=2, is_bonus=True, hall_zone='Photo Installation / Designated Social Zone',
+         theme='Photo Moment',
+         question_text='Take a photo at the "Made in India, Made for the World" or "Next Stop: Global" installation.',
+         answer_type='photo_upload', answer_options=None, min_answer_length=0),
+    dict(stamp_number=3, is_bonus=True, hall_zone='Designated Startup / Founder Zone',
+         theme='Young Entrepreneur Hunt',
+         question_text='Identify a product that could become a ₹100-crore brand. Why? (50–100 words)',
+         answer_type='short_text', answer_options=None, min_answer_length=150),
+    dict(stamp_number=4, is_bonus=True, hall_zone='Any Distinct Hall Not Already Used',
+         theme='Extra Exploration',
+         question_text='Explore one additional hall and name a product category you discovered.',
+         answer_type='short_text', answer_options=None, min_answer_length=2),
+    dict(stamp_number=5, is_bonus=True, hall_zone='Official Reel Booth / Social Zone',
+         theme='Best Expo Reel',
+         question_text='Upload your original 30-second Expo reel link, or submit at the designated desk.',
+         answer_type='short_text', answer_options=None, min_answer_length=0),
+]
+
+
+@router.post('/checkpoints/seed-default')
+async def seed_default_checkpoints(staff_name: Optional[str] = Query(default=None)):
+    """One-click setup: creates the 10 compulsory + 5 bonus checkpoints
+    from the UPITS 2026 BRD (15 total, one per hall/zone), each with its
+    own unique QR-signing secret. Skips any stamp_number+is_bonus pair
+    that already exists, so it's safe to re-run — e.g. after adding a
+    16th custom checkpoint, running seed again won't duplicate the 15
+    official ones. GPS latitude/longitude is left unset; edit each
+    checkpoint afterwards with the coordinates from the on-site GPS
+    survey (BRD section 8) before going live."""
+    pool = await get_pool()
+    created, skipped = [], []
+    async with pool.acquire() as conn:
+        existing = await conn.fetch('SELECT stamp_number, is_bonus FROM checkpoints')
+        existing_keys = {(r['stamp_number'], r['is_bonus']) for r in existing}
+        for item in DEFAULT_CHECKPOINTS:
+            key = (item['stamp_number'], item['is_bonus'])
+            if key in existing_keys:
+                skipped.append(item['hall_zone'])
+                continue
+            secret = secrets.token_hex(24)
+            row = await conn.fetchrow('''
+              INSERT INTO checkpoints(stamp_number,is_bonus,hall_zone,theme,question_text,answer_type,answer_options,
+              min_answer_length,latitude,longitude,geofence_radius_m,max_accuracy_m,qr_token_secret,qr_expires_seconds,is_active,qr_rotated_at)
+              VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,NULL,NULL,40,50,$9,600,true,now()) RETURNING id, hall_zone
+            ''', item['stamp_number'], item['is_bonus'], item['hall_zone'], item['theme'], item['question_text'],
+            item['answer_type'], json.dumps(item['answer_options']) if item['answer_options'] is not None else None,
+            item['min_answer_length'], secret)
+            created.append(dict(row))
+    await audit('checkpoints_seed_default', 'checkpoint', None,
+                {'created': len(created), 'skipped': len(skipped)}, staff_name)
+    return {'created': created, 'skipped_existing': skipped}
+
+
 @router.get('/checkpoints/{checkpoint_id}/qr-token')
 async def get_qr_token(checkpoint_id: str):
     pool = await get_pool()
@@ -290,7 +400,7 @@ async def reviews(status: str = Query(default='pending')):
         rows=await conn.fetch('''
           SELECT st.id, st.created_at, st.status, st.answer_text, st.unique_observation, st.suggestion_feedback,
                  st.scan_latitude, st.scan_longitude, st.scan_accuracy_m, st.fraud_flag, st.reviewed_at,
-                 st.reviewed_reason, st.reviewed_by,
+                 st.reviewed_reason, st.reviewed_by, c.id AS checkpoint_id,
                  s.passport_id, s.full_name, s.institution_name, c.stamp_number, c.is_bonus, c.hall_zone, c.theme, c.question_text
           FROM stamps st JOIN students s ON s.id=st.student_id JOIN checkpoints c ON c.id=st.checkpoint_id
           WHERE st.status = ANY($1::varchar[]) ORDER BY st.created_at DESC LIMIT 500

@@ -306,14 +306,19 @@ async function renderCheckpoints() {
   $("content").innerHTML = `
     <div class="section-head">
       <div><h3>Checkpoint Management</h3><p>Create and configure every hall checkpoint, its geofence and its QR without any code changes.</p></div>
-      <button class="btn primary" onclick="openCheckpointModal()">+ New Checkpoint</button>
+      <div style="display:flex;gap:8px">
+        ${d.items.length === 0 ? `<button class="btn" onclick="seedCheckpoints()">Seed Official 15 Checkpoints</button>` : ""}
+        <button class="btn primary" onclick="openCheckpointModal()">+ New Checkpoint</button>
+      </div>
     </div>
-    <div class="card table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Hall</th><th>Theme</th><th>Type</th><th>Geo</th><th>Active</th><th></th></tr></thead><tbody>
+    ${d.items.length === 0 ? `<div class="card"><p class="muted" style="margin:0">No checkpoints yet. Click <b>Seed Official 15 Checkpoints</b> to create the 10 compulsory + 5 bonus hall checkpoints from the BRD in one go (each gets its own QR), then edit each one to set its GPS latitude/longitude from the on-site survey before going live.</p></div>` : ""}
+    <div class="card table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Hall</th><th>Theme</th><th>Type</th><th>Geo</th><th>Active</th><th>Responses</th><th></th></tr></thead><tbody>
       ${d.items.map((c) => `<tr>
         <td>${c.is_bonus ? "B" + c.stamp_number : c.stamp_number}</td>
         <td>${esc(c.hall_zone)}</td><td>${esc(c.theme)}</td><td>${esc(c.answer_type)}</td>
-        <td>${c.latitude != null ? c.geofence_radius_m + "m" : "Not set"}</td>
+        <td>${c.latitude != null ? c.geofence_radius_m + "m" : `<span class="status warn">Set GPS</span>`}</td>
         <td><span class="status ${c.is_active ? "ok" : "bad"}">${c.is_active ? "ACTIVE" : "OFF"}</span></td>
+        <td><button class="btn small" onclick="viewCheckpointResponses('${c.id}')">View</button></td>
         <td style="white-space:nowrap">
           <button class="btn small" onclick="openCheckpointModal('${c.id}')">Edit</button>
           <button class="btn small" onclick="showQr('${c.id}')">QR</button>
@@ -322,6 +327,22 @@ async function renderCheckpoints() {
         </td>
       </tr>`).join("")}
     </tbody></table></div>`;
+}
+
+function viewCheckpointResponses(checkpointId) {
+  state.section = "reviews";
+  document.querySelectorAll(".nav").forEach((b) => b.classList.toggle("active", b.dataset.section === "reviews"));
+  $("pageTitle").textContent = window.upitsAdminI18n.t(TITLE_KEY.reviews || "reviews");
+  $("content").innerHTML = '<div class="card muted">Loading…</div>';
+  renderReviews("all", checkpointId).catch((x) => { $("content").innerHTML = `<div class="card"><div class="error">${esc(x.message)}</div></div>`; });
+}
+
+async function seedCheckpoints() {
+  try {
+    const d = await api("/api/admin/checkpoints/seed-default" + (staffName() ? "?staff_name=" + encodeURIComponent(staffName()) : ""), { method: "POST" });
+    toast(`${d.created.length} checkpoints created${d.skipped_existing.length ? `, ${d.skipped_existing.length} already existed` : ""}.`);
+    loadSection("checkpoints");
+  } catch (x) { toast(x.message, true); }
 }
 
 function openCheckpointModal(id) {
@@ -393,29 +414,68 @@ async function rotateQr(id) {
 // =================================================================
 // ANSWER REVIEW
 // =================================================================
-async function renderReviews(status) {
+let reviewCache = [];
+let reviewCheckpointFilter = null;
+async function renderReviews(status, checkpointId) {
   status = status || "pending";
+  reviewCheckpointFilter = checkpointId !== undefined ? checkpointId : reviewCheckpointFilter;
   const d = await api("/api/admin/reviews?status=" + status);
+  const items = reviewCheckpointFilter ? d.items.filter((r) => r.checkpoint_id === reviewCheckpointFilter) : d.items;
+  reviewCache = items;
   $("content").innerHTML = `
-    <div class="section-head"><div><h3>Manual Answer Review</h3><p>Every submitted answer stays pending until it's approved, rejected or marked as a manual stamp.</p></div><button class="btn small" onclick="renderReviews('${status}')">Refresh</button></div>
+    <div class="section-head"><div><h3>Checkpoint Answer Review</h3><p>Every submitted answer stays pending until an admin marks it correct, incorrect, or as a manual override stamp.</p></div><button class="btn small" onclick="renderReviews('${status}')">Refresh</button></div>
     <div class="pill-tabs">
       ${["pending", "manual", "rejected", "approved", "all"].map((s) => `<button class="${s === status ? "active" : ""}" onclick="renderReviews('${s}')">${s[0].toUpperCase() + s.slice(1)}</button>`).join("")}
+      ${reviewCheckpointFilter ? `<button onclick="reviewCheckpointFilter=null;renderReviews('${status}')">✕ Clear checkpoint filter</button>` : ""}
     </div>
     <div class="card table-wrap"><table class="data-table"><thead><tr><th>Passport</th><th>Student</th><th>Hall</th><th>Answer</th><th>Fraud</th><th>Time</th><th></th></tr></thead><tbody>
-      ${d.items.map((r) => `<tr>
+      ${items.map((r) => `<tr>
         <td>${esc(r.passport_id)}</td><td>${esc(r.full_name)}<br><small class="muted">${esc(r.institution_name)}</small></td>
         <td>${esc(r.hall_zone)}</td>
         <td style="white-space:normal;max-width:260px">${esc(r.answer_text)}</td>
         <td>${r.fraud_flag ? `<span class="status bad">${esc(r.fraud_flag)}</span>` : "—"}</td>
         <td>${fmt(r.created_at)}</td>
         <td style="white-space:nowrap">
-          ${status !== "approved" ? `<button class="btn small" onclick="reviewAction('${r.id}','approve')">Approve</button>` : ""}
-          ${status !== "rejected" ? `<button class="btn small" onclick="reviewAction('${r.id}','reject')">Reject</button>` : ""}
+          <button class="btn small" onclick="viewResponse('${r.id}')">View</button>
+          ${status !== "approved" ? `<button class="btn small" onclick="reviewAction('${r.id}','approve')">✓ Correct</button>` : ""}
+          ${status !== "rejected" ? `<button class="btn small" onclick="reviewAction('${r.id}','reject')">✗ Incorrect</button>` : ""}
           ${status !== "manual" ? `<button class="btn small" onclick="reviewAction('${r.id}','manual')">Manual</button>` : ""}
         </td>
       </tr>`).join("") || `<tr><td colspan="7" class="muted">Nothing here.</td></tr>`}
     </tbody></table></div>`;
 }
+
+function viewResponse(stampId) {
+  const r = reviewCache.find((x) => x.id === stampId) || [];
+  if (!r || !r.id) return;
+  $("responseModalBody").innerHTML = `
+    <div class="detail-grid">
+      <div><span>Passport ID</span><b>${esc(r.passport_id)}</b></div>
+      <div><span>Student</span><b>${esc(r.full_name)}</b></div>
+      <div><span>Institution</span><b>${esc(r.institution_name)}</b></div>
+      <div><span>Checkpoint</span><b>${r.is_bonus ? "Bonus " + r.stamp_number : "Stamp " + r.stamp_number} — ${esc(r.hall_zone)}</b></div>
+      <div><span>Theme</span><b>${esc(r.theme)}</b></div>
+      <div><span>Status</span><b>${esc(r.status)}</b></div>
+      <div><span>Scanned At</span><b>${fmt(r.created_at)}</b></div>
+      <div><span>GPS Accuracy</span><b>${r.scan_accuracy_m != null ? Math.round(r.scan_accuracy_m) + " m" : "—"}</b></div>
+      <div><span>Fraud Flag</span><b>${r.fraud_flag ? esc(r.fraud_flag) : "None"}</b></div>
+      <div><span>Location</span><b>${r.scan_latitude != null ? r.scan_latitude.toFixed(5) + ", " + r.scan_longitude.toFixed(5) : "—"}</b></div>
+    </div>
+    <label style="margin-top:4px">Question Asked</label>
+    <p class="muted" style="margin:0 0 10px">${esc(r.question_text)}</p>
+    <label>Student's Answer</label>
+    <p style="margin:0 0 10px;white-space:pre-wrap">${esc(r.answer_text)}</p>
+    ${r.unique_observation ? `<label>Something Unique They Noticed</label><p style="margin:0 0 10px;white-space:pre-wrap">${esc(r.unique_observation)}</p>` : ""}
+    ${r.suggestion_feedback ? `<label>Suggestion / Feedback</label><p style="margin:0 0 10px;white-space:pre-wrap">${esc(r.suggestion_feedback)}</p>` : ""}
+    ${r.reviewed_by ? `<p class="muted" style="font-size:11px;margin-top:10px">Last reviewed by ${esc(r.reviewed_by)} on ${fmt(r.reviewed_at)} — "${esc(r.reviewed_reason || "")}"</p>` : ""}
+    <div class="modal-actions" style="justify-content:flex-start">
+      ${r.status !== "approved" ? `<button class="btn primary" onclick="closeResponseModal();reviewAction('${r.id}','approve')">✓ Mark Correct</button>` : ""}
+      ${r.status !== "rejected" ? `<button class="btn danger" onclick="closeResponseModal();reviewAction('${r.id}','reject')">✗ Mark Incorrect</button>` : ""}
+      ${r.status !== "manual" ? `<button class="btn" onclick="closeResponseModal();reviewAction('${r.id}','manual')">Manual Stamp</button>` : ""}
+    </div>`;
+  $("responseModal").classList.remove("hidden");
+}
+function closeResponseModal() { $("responseModal").classList.add("hidden"); }
 
 function reviewAction(stampId, action) {
   const titles = { approve: "Approve stamp", reject: "Reject stamp", manual: "Mark as manual stamp" };
