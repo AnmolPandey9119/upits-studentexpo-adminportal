@@ -4,4 +4,4 @@
 // match the student backend's URL — they're two different services.
 //window.UPITS_ADMIN_API_BASE = "https://your-admin-backend.vercel.app";
 // Local dev against `uvicorn main:app --reload --port 8001`:
-window.UPITS_ADMIN_API_BASE = "upits-studentexpo-adminportal.vercel.app";
+window.UPITS_ADMIN_API_BASE = "https://upits-studentexpo-adminportal.vercel.app";
