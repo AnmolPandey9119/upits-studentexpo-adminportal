@@ -1,0 +1,37 @@
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.Python
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Vercel ---
+.vercel/
+
+# --- Node (agar frontend build tooling aage add ho) ---
+node_modules/
+
+# --- OS / editor junk ---
+.DS_Store
+__MACOSX/
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# --- Local db dumps / exports ---
+*.sqlite3
+*.dump

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>UPITS 2026 — Admin Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+<div class="tricolor"></div>
+
+<div id="loginScreen" class="modal">
+  <div class="modal-card" style="text-align:center">
+    <img src="assets/ieml-logo.png" alt="IEML" style="width:52px;height:52px;object-fit:contain;margin-bottom:6px" onerror="this.style.display='none'">
+    <h3 style="margin-bottom:4px">UPITS 2026 Admin Login</h3>
+    <p class="muted" style="margin:0 0 16px;font-size:12.5px">Staff login required to access the admin portal.</p>
+    <form id="loginForm" style="text-align:left">
+      <label>Username<input id="loginUsername" autocomplete="username" required></label>
+      <label>Password<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+      <div id="loginError" class="error hidden"></div>
+      <button class="btn primary full" style="margin-top:16px" type="submit">Log In</button>
+    </form>
+  </div>
+</div>
+
+<div class="app hidden" id="appRoot">
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="assets/ieml-logo.png" alt="IEML" onerror="this.style.display='none'">
+      <div><strong>UPITS 2026</strong><span>ADMIN PORTAL</span></div>
+    </div>
+    <nav id="navList">
+      <button data-section="dashboard" class="nav active"><span data-i18n="nav_dashboard">Dashboard</span></button>
+      <button data-section="students" class="nav"><span data-i18n="nav_students">Students</span></button>
+      <button data-section="checkpoints" class="nav"><span data-i18n="nav_checkpoints">Checkpoints & QR</span></button>
+      <button data-section="reviews" class="nav"><span data-i18n="nav_reviews">Answer Review</span><b id="badgeReviews">0</b></button>
+      <button data-section="scans" class="nav"><span data-i18n="nav_scans">Scan Monitoring</span></button>
+      <button data-section="fraud" class="nav"><span data-i18n="nav_fraud">Fraud Review</span><b id="badgeFraud">0</b></button>
+      <button data-section="certificates" class="nav"><span data-i18n="nav_certificates">Certificates</span></button>
+      <button data-section="redemption" class="nav"><span data-i18n="nav_redemption">Redemption Desk</span></button>
+      <button data-section="feedback" class="nav"><span data-i18n="nav_feedback">Feedback Analytics</span></button>
+      <button data-section="institutions" class="nav"><span data-i18n="nav_institutions">Institutions</span></button>
+      <button data-section="footfall" class="nav"><span data-i18n="nav_footfall">Footfall & Routes</span></button>
+      <button data-section="exports" class="nav"><span data-i18n="nav_exports">Reports & Export</span></button>
+      <button data-section="audit" class="nav"><span data-i18n="nav_audit">Audit Log</span></button>
+      <button data-section="consent" class="nav"><span data-i18n="nav_consent">Consent & Data</span></button>
+      <button data-section="settings" class="nav"><span data-i18n="nav_settings">Settings</span></button>
+    </nav>
+    <div class="side-footer">
+      <label data-i18n="staff_name_label">Acting as (for audit log)</label>
+      <input id="staffName" placeholder="Your name">
+      <button class="btn small full" id="logoutBtn" style="margin-top:8px">Log Out</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">India Expo Centre & Mart • 25–29 September 2026</div>
+        <h2 id="pageTitle">Dashboard</h2>
+      </div>
+      <div class="topbar-right">
+        <button class="lang-toggle" id="langToggle">हिंदी</button>
+      </div>
+    </header>
+
+    <section id="content"><!-- rendered by admin.js --></section>
+  </main>
+</div>
+
+<div id="checkpointModal" class="modal hidden">
+  <div class="modal-card wide">
+    <div class="modal-head"><h3 id="modalTitle">New Checkpoint</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <form id="checkpointForm">
+      <input type="hidden" id="cpId">
+      <div class="form-grid">
+        <label>Stamp Number<input id="stampNumber" type="number" min="1" required></label>
+        <label>Type<select id="isBonus"><option value="false">Mandatory</option><option value="true">Bonus</option></select></label>
+        <label>Hall / Zone<input id="hallZone" required></label>
+        <label>Theme<input id="theme" required></label>
+        <label class="fullrow">Question<textarea id="questionText" rows="3" required></textarea></label>
+        <label>Answer Type
+          <select id="answerType">
+            <option value="short_text">Short Text</option>
+            <option value="dropdown">Dropdown</option>
+            <option value="multiple_choice">Multiple Choice</option>
+            <option value="photo_upload">Photo Upload</option>
+          </select>
+        </label>
+        <label>Min Answer Length<input id="minLength" type="number" min="0" value="0"></label>
+        <label class="fullrow">Answer Options <span class="hint">comma separated; leave blank for text/photo</span><input id="answerOptions" placeholder="Option 1, Option 2, Option 3"></label>
+        <label>Latitude<input id="latitude" type="number" step="any"></label>
+        <label>Longitude<input id="longitude" type="number" step="any"></label>
+        <label>Geofence Radius (m)<input id="radius" type="number" min="10" value="40"></label>
+        <label>Max GPS Accuracy (m)<input id="maxAccuracy" type="number" min="1" value="50"></label>
+        <label>QR Lifetime (sec)<input id="qrExpiry" type="number" min="60" value="600"></label>
+        <label>Status<select id="isActive"><option value="true">Active</option><option value="false">Inactive</option></select></label>
+      </div>
+      <div id="formError" class="error hidden"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn primary">Save Checkpoint</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="qrModal" class="modal hidden">
+  <div class="modal-card qr-card">
+    <div class="modal-head"><h3>Checkpoint QR</h3><button class="icon-btn" onclick="closeQR()">×</button></div>
+    <div id="qrBox" class="qr-box"></div>
+    <div id="qrMeta" class="qr-meta"></div>
+    <button class="btn primary full" onclick="printQR()">Print QR</button>
+  </div>
+</div>
+
+<div id="reasonModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head"><h3 id="reasonTitle">Add a reason</h3><button class="icon-btn" onclick="closeReason()">×</button></div>
+    <label id="reasonLabel">Reason</label>
+    <textarea id="reasonText" rows="3" placeholder="Why are you taking this action?"></textarea>
+    <div id="reasonError" class="error hidden"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" onclick="closeReason()">Cancel</button>
+      <button class="btn primary" onclick="confirmReason()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div id="studentModal" class="modal hidden">
+  <div class="modal-card wide"><div class="modal-head"><h3>Student Passport</h3><button class="icon-btn" onclick="closeStudentModal()">×</button></div>
+  <div id="studentModalBody"></div></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>
