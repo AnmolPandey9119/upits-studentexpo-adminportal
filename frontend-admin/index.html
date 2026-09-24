@@ -3,65 +3,105 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FFF7F2">
 <title>UPITS 2026 — Admin Portal</title>
+<link rel="icon" type="image/png" href="assets/ieml-logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/admin.css">
 </head>
 <body>
-<div class="tricolor"></div>
+<div class="tricolor" aria-hidden="true"></div>
 
-<div id="loginScreen" class="modal">
-  <div class="modal-card" style="text-align:center">
-    <img src="assets/ieml-logo.png" alt="IEML" style="width:52px;height:52px;object-fit:contain;margin-bottom:6px" onerror="this.style.display='none'">
-    <h3 style="margin-bottom:4px">UPITS 2026 Admin Login</h3>
-    <p class="muted" style="margin:0 0 16px;font-size:12.5px">Staff login required to access the admin portal.</p>
-    <form id="loginForm" style="text-align:left">
-      <label>Username<input id="loginUsername" autocomplete="username" required></label>
-      <label>Password<input id="loginPassword" type="password" autocomplete="current-password" required></label>
-      <div id="loginError" class="error hidden"></div>
-      <button class="btn primary full" style="margin-top:16px" type="submit">Log In</button>
-    </form>
+<!-- ============================ LOGIN ============================ -->
+<div id="loginScreen" class="modal login">
+  <div class="login-shell">
+    <aside class="login-art">
+      <img class="login-logo" src="assets/upits-logo.png" alt="UP International Trade Show, 4th Edition">
+      <p class="login-tag">Ultimate sourcing begins here</p>
+      <div class="days" aria-label="25 to 29 September 2026">
+        <span class="day d1">25</span><span class="day d2">26</span><span class="day d3">27</span><span class="day d4">28</span><span class="day d5">29</span>
+        <span class="days-month">Sept 2026</span>
+      </div>
+      <img class="login-lotus" src="assets/lotus-collage.webp" alt="" onerror="this.style.display='none'">
+      <p class="login-org">Jointly organised by Government of Uttar Pradesh<br>and India Exposition Mart Limited (IEML)</p>
+    </aside>
+
+    <div class="login-panel">
+      <div class="login-card">
+        <img class="login-mark" src="assets/ieml-logo.png" alt="IEML" onerror="this.style.display='none'">
+        <h3>UPITS 2026 Admin Login</h3>
+        <p class="muted login-sub">Staff login required to access the admin portal.</p>
+        <form id="loginForm">
+          <label>Username<input id="loginUsername" autocomplete="username" required></label>
+          <label>Password<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+          <div id="loginError" class="error hidden"></div>
+          <button class="btn primary full lg" type="submit">Log In</button>
+        </form>
+      </div>
+    </div>
   </div>
 </div>
 
+<!-- ============================= APP ============================= -->
 <div class="app hidden" id="appRoot">
-  <aside class="sidebar">
+  <div class="scrim" id="scrim"></div>
+
+  <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <img src="assets/ieml-logo.png" alt="IEML" onerror="this.style.display='none'">
-      <div><strong>UPITS 2026</strong><span>ADMIN PORTAL</span></div>
+      <img class="brand-logo" src="assets/upits-logo.png" alt="UP International Trade Show 2026">
+      <span class="brand-tag">Admin Portal</span>
     </div>
-    <nav id="navList">
-      <button data-section="dashboard" class="nav active"><span data-i18n="nav_dashboard">Dashboard</span></button>
-      <button data-section="students" class="nav"><span data-i18n="nav_students">Students</span></button>
-      <button data-section="checkpoints" class="nav"><span data-i18n="nav_checkpoints">Checkpoints & QR</span></button>
-      <button data-section="reviews" class="nav"><span data-i18n="nav_reviews">Answer Review</span><b id="badgeReviews">0</b></button>
-      <button data-section="scans" class="nav"><span data-i18n="nav_scans">Scan Monitoring</span></button>
-      <button data-section="certificates" class="nav"><span data-i18n="nav_certificates">Certificates</span></button>
-      <button data-section="redemption" class="nav"><span data-i18n="nav_redemption">Redemption Desk</span></button>
-      <button data-section="feedback" class="nav"><span data-i18n="nav_feedback">Feedback Analytics</span></button>
-      <button data-section="institutions" class="nav"><span data-i18n="nav_institutions">Institutions</span></button>
-      <button data-section="footfall" class="nav"><span data-i18n="nav_footfall">Footfall & Routes</span></button>
-      <button data-section="exports" class="nav"><span data-i18n="nav_exports">Reports & Export</span></button>
-      <button data-section="audit" class="nav"><span data-i18n="nav_audit">Audit Log</span></button>
-      <button data-section="consent" class="nav"><span data-i18n="nav_consent">Consent & Data</span></button>
-      <button data-section="settings" class="nav"><span data-i18n="nav_settings">Settings</span></button>
+
+    <nav id="navList" aria-label="Admin sections">
+      <button data-section="dashboard" class="nav active"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span data-i18n="nav_dashboard">Dashboard</span></button>
+      <button data-section="students" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.9c2 .6 3.2 2.3 3.6 5.1"/></svg><span data-i18n="nav_students">Students</span></button>
+      <button data-section="checkpoints" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.2"/><rect x="14" y="3" width="7" height="7" rx="1.2"/><rect x="3" y="14" width="7" height="7" rx="1.2"/><path d="M14 14h3v3h-3zM20 14v.01M17 20h4M20 17v3"/></svg><span data-i18n="nav_checkpoints">Checkpoints & QR</span></button>
+      <button data-section="reviews" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="m9 13.5 2 2 4-4"/></svg><span data-i18n="nav_reviews">Answer Review</span><b id="badgeReviews">0</b></button>
+      <button data-section="scans" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M4 12h16"/></svg><span data-i18n="nav_scans">Scan Monitoring</span></button>
+      <button data-section="certificates" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="5.5"/><path d="m8.6 13.8-1.6 7 5-2.6 5 2.6-1.6-7"/></svg><span data-i18n="nav_certificates">Certificates</span></button>
+      <button data-section="redemption" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7M7.5 8a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg><span data-i18n="nav_redemption">Redemption Desk</span></button>
+      <button data-section="feedback" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-8M12 20V5M19 20v-5"/></svg><span data-i18n="nav_feedback">Feedback Analytics</span></button>
+      <button data-section="institutions" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V10l7-5 7 5v11"/><path d="M9 21v-6h6v6M9 12h.01M15 12h.01"/></svg><span data-i18n="nav_institutions">Institutions</span></button>
+      <button data-section="footfall" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="5" r="2.2"/><path d="M8.2 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.8"/></svg><span data-i18n="nav_footfall">Footfall & Routes</span></button>
+      <button data-section="exports" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 20h16"/></svg><span data-i18n="nav_exports">Reports & Export</span></button>
+      <button data-section="audit" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg><span data-i18n="nav_audit">Audit Log</span></button>
+      <button data-section="consent" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v6c0 4.5 3.2 7.6 7.5 9 4.3-1.4 7.5-4.5 7.5-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></svg><span data-i18n="nav_consent">Consent & Data</span></button>
+      <button data-section="settings" class="nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span data-i18n="nav_settings">Settings</span></button>
     </nav>
+
     <div class="side-footer">
-      <label data-i18n="staff_name_label">Acting as (for audit log)</label>
+      <label for="staffName" data-i18n="staff_name_label">Acting as (for audit log)</label>
       <input id="staffName" placeholder="Your name">
-      <button class="btn small full" id="logoutBtn" style="margin-top:8px">Log Out</button>
+      <button class="btn small full" id="logoutBtn">Log Out</button>
+      <div class="organiser">
+        <img src="assets/ieml-logo.png" alt="" onerror="this.style.display='none'">
+        <span>India Exposition Mart Limited</span>
+      </div>
     </div>
   </aside>
 
   <main class="main">
+    <div class="mobile-bar">
+      <button class="menu-btn" id="menuBtn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <img src="assets/upits-logo.png" alt="UPITS 2026">
+      <span class="mb-title">Admin Portal</span>
+    </div>
+
     <header class="topbar">
-      <div>
-        <div class="eyebrow">India Expo Centre & Mart • 25–29 September 2026</div>
+      <div class="topbar-title">
         <h2 id="pageTitle">Dashboard</h2>
+        <p class="venue">India Expo Centre &amp; Mart, Greater Noida</p>
       </div>
       <div class="topbar-right">
+        <span class="event-status hidden" id="eventStatus"></span>
+        <div class="days" aria-label="Event days: 25 to 29 September 2026">
+          <span class="day d1" data-day="25">25</span><span class="day d2" data-day="26">26</span><span class="day d3" data-day="27">27</span><span class="day d4" data-day="28">28</span><span class="day d5" data-day="29">29</span>
+          <span class="days-month">Sept 2026</span>
+        </div>
         <button class="lang-toggle" id="langToggle">हिंदी</button>
       </div>
     </header>
@@ -70,9 +110,10 @@
   </main>
 </div>
 
+<!-- ============================ MODALS ============================ -->
 <div id="checkpointModal" class="modal hidden">
   <div class="modal-card wide">
-    <div class="modal-head"><h3 id="modalTitle">New Checkpoint</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="modal-head"><h3 id="modalTitle">New Checkpoint</h3><button class="icon-btn" aria-label="Close" onclick="closeModal()">×</button></div>
     <form id="checkpointForm">
       <input type="hidden" id="cpId">
       <div class="form-grid">
@@ -97,9 +138,9 @@
         <label>Max GPS Accuracy (m)<input id="maxAccuracy" type="number" min="1" value="50"></label>
         <label>Status<select id="isActive"><option value="true">Active</option><option value="false">Inactive</option></select></label>
       </div>
-      <div id="cpManualCodeRow" class="hidden" style="margin:10px 0;padding:10px;background:#f7f4ec;border-radius:8px">
-        <span class="muted" style="font-size:12px">Manual fallback code (for students whose camera can't scan)</span><br>
-        <b id="cpManualCode" style="font-size:20px;letter-spacing:3px;font-family:monospace"></b>
+      <div id="cpManualCodeRow" class="manual-code hidden">
+        <span class="muted">Manual fallback code (for students whose camera can't scan)</span>
+        <b id="cpManualCode" class="mono"></b>
       </div>
       <div id="formError" class="error hidden"></div>
       <div class="modal-actions">
@@ -112,10 +153,10 @@
 
 <div id="qrModal" class="modal hidden">
   <div class="modal-card qr-card">
-    <div class="modal-head"><h3>Checkpoint QR</h3><button class="icon-btn" onclick="closeQR()">×</button></div>
+    <div class="modal-head"><h3>Checkpoint QR</h3><button class="icon-btn" aria-label="Close" onclick="closeQR()">×</button></div>
     <div id="qrBox" class="qr-box"></div>
     <div id="qrMeta" class="qr-meta"></div>
-    <div style="display:flex;gap:8px;margin-top:10px">
+    <div class="qr-actions">
       <button class="btn primary full" onclick="downloadQR()">Download QR (PNG)</button>
       <button class="btn full" onclick="printQR()">Print QR</button>
     </div>
@@ -124,7 +165,7 @@
 
 <div id="reasonModal" class="modal hidden">
   <div class="modal-card">
-    <div class="modal-head"><h3 id="reasonTitle">Add a reason</h3><button class="icon-btn" onclick="closeReason()">×</button></div>
+    <div class="modal-head"><h3 id="reasonTitle">Add a reason</h3><button class="icon-btn" aria-label="Close" onclick="closeReason()">×</button></div>
     <label id="reasonLabel">Reason</label>
     <textarea id="reasonText" rows="3" placeholder="Why are you taking this action?"></textarea>
     <div id="reasonError" class="error hidden"></div>
@@ -136,12 +177,12 @@
 </div>
 
 <div id="studentModal" class="modal hidden">
-  <div class="modal-card wide"><div class="modal-head"><h3>Student Passport</h3><button class="icon-btn" onclick="closeStudentModal()">×</button></div>
+  <div class="modal-card wide"><div class="modal-head"><h3>Student Passport</h3><button class="icon-btn" aria-label="Close" onclick="closeStudentModal()">×</button></div>
   <div id="studentModalBody"></div></div>
 </div>
 
 <div id="responseModal" class="modal hidden">
-  <div class="modal-card wide"><div class="modal-head"><h3>Checkpoint Response</h3><button class="icon-btn" onclick="closeResponseModal()">×</button></div>
+  <div class="modal-card wide"><div class="modal-head"><h3>Checkpoint Response</h3><button class="icon-btn" aria-label="Close" onclick="closeResponseModal()">×</button></div>
   <div id="responseModalBody"></div></div>
 </div>
 
@@ -149,5 +190,6 @@
 <script src="js/config.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/admin.js"></script>
+<script src="js/ui.js"></script>
 </body>
 </html>
