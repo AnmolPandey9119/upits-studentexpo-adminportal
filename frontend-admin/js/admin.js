@@ -118,7 +118,7 @@ async function downloadCsv(dataset) {
 // ---------------------------------------------------------------
 const TITLE_KEY = {
   dashboard: "title_dashboard", students: "title_students", checkpoints: "title_checkpoints",
-  reviews: "title_reviews", scans: "title_scans", fraud: "title_fraud", certificates: "title_certificates",
+  reviews: "title_reviews", scans: "title_scans", certificates: "title_certificates",
   redemption: "title_redemption", feedback: "title_feedback", institutions: "title_institutions",
   footfall: "title_footfall", exports: "title_exports", audit: "title_audit", consent: "title_consent",
   settings: "title_settings",
@@ -126,7 +126,7 @@ const TITLE_KEY = {
 
 const RENDERERS = {
   dashboard: renderDashboard, students: renderStudents, checkpoints: renderCheckpoints,
-  reviews: renderReviews, scans: renderScans, fraud: renderFraud, certificates: renderCertificates,
+  reviews: renderReviews, scans: renderScans, certificates: renderCertificates,
   redemption: renderRedemption, feedback: renderFeedback, institutions: renderInstitutions,
   footfall: renderFootfall, exports: renderExports, audit: renderAudit, consent: renderConsent,
   settings: renderSettings,
@@ -169,7 +169,6 @@ async function refreshBadges() {
   try {
     const d = await api("/api/admin/dashboard");
     setBadge("badgeReviews", d.metrics.pending_reviews);
-    setBadge("badgeFraud", d.metrics.fraud_flagged_stamps);
   } catch {}
 }
 function setBadge(id, val) {
@@ -186,23 +185,15 @@ async function renderDashboard() {
   $("content").innerHTML = `
     <div class="metrics">
       <div class="metric"><span>Total Students</span><strong>${n(m.registrations)}</strong></div>
-      <div class="metric"><span>Passports Issued</span><strong>${n(m.certificates)}</strong></div>
-      <div class="metric saffron"><span>Passports In Queue</span><strong>${n(m.passports_in_queue)}</strong></div>
       <div class="metric green"><span>Active Passports</span><strong>${n(m.active_passports)}</strong></div>
       <div class="metric green"><span>Active Passports Today</span><strong>${n(m.active_passports_today)}</strong></div>
-      <div class="metric saffron"><span>Registered Today</span><strong>${n(m.registrations_today)}</strong></div>
-      <div class="metric gold"><span>Scans Today</span><strong>${n(m.scans_today)}</strong></div>
       <div class="metric green"><span>Completed Passports (10/10)</span><strong>${n(m.completed_passports)}</strong></div>
       <div class="metric gold"><span>Certificate Eligible</span><strong>${n(m.certificate_eligible)}</strong></div>
       <div class="metric gold"><span>Prize Draw Eligible (Bonus)</span><strong>${n(m.prize_draw_eligible)}</strong></div>
       <div class="metric"><span>Checkpoint Responses (DB)</span><strong>${n(m.checkpoint_responses_total)}</strong></div>
-      <div class="metric green"><span>Approved Stamps</span><strong>${n(m.approved_stamps)}</strong></div>
       <div class="metric saffron"><span>Pending Review</span><strong>${n(m.pending_reviews)}</strong></div>
-      <div class="metric danger"><span>Rejected Stamps</span><strong>${n(m.rejected_stamps)}</strong></div>
-      <div class="metric danger"><span>Fraud Flagged</span><strong>${n(m.fraud_flagged_stamps)}</strong></div>
       <div class="metric green"><span>Redeem Count</span><strong>${n(m.redeemed)}</strong></div>
       <div class="metric gold"><span>Prize Eligible</span><strong>${n(m.prize_eligible)}</strong></div>
-      <div class="metric gold"><span>Priority Draw Eligible</span><strong>${n(m.priority_draw_eligible)}</strong></div>
     </div>
     <div class="section-head" style="margin-top:4px">
       <div><p class="muted" style="margin:0;font-size:12px">Certificates auto-issue the moment a student's 10th compulsory stamp is approved. Use Sync if anyone eligible is still missing one (e.g. after a manual override).</p></div>
@@ -632,36 +623,6 @@ async function renderScans(result) {
         <td><span class="status ${s.result === "success" ? "ok" : "bad"}">${esc(s.result)}</span></td>
         <td>${esc(s.reason || "—")}</td><td>${s.accuracy_m != null ? esc(s.accuracy_m) + "m" : "—"}</td></tr>`).join("") || `<tr><td colspan="6" class="muted">No scans logged yet.</td></tr>`}
     </tbody></table></div>`;
-}
-
-// =================================================================
-// FRAUD REVIEW
-// =================================================================
-async function renderFraud() {
-  const d = await api("/api/admin/fraud");
-  $("content").innerHTML = `
-    <div class="section-head"><div><h3>Fraud / Anti-Cheating Review</h3><p>Impossible-travel patterns, mock-location flags and repeat failed attempts.</p></div><button class="btn small" onclick="loadSection('fraud')">Refresh</button></div>
-    <div class="metrics" style="grid-template-columns:repeat(2,1fr)">
-      <div class="metric danger"><span>Mock Location Attempts</span><strong>${n(d.mock_location_attempts)}</strong></div>
-      <div class="metric danger"><span>Impossible Travel Flags</span><strong>${n(d.impossible_travel_attempts)}</strong></div>
-    </div>
-    <div class="grid-2">
-      <div class="card">
-        <h3>Flagged Stamps</h3>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Passport</th><th>Student</th><th>Hall</th><th>Flag</th><th>Time</th></tr></thead><tbody>
-          ${d.flagged_stamps.map((f) => `<tr><td>${esc(f.passport_id)}</td><td>${esc(f.full_name)}</td><td>${esc(f.hall_zone)}</td>
-            <td><span class="status bad">${esc(f.fraud_flag)}</span></td><td>${fmt(f.created_at)}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">None flagged.</td></tr>`}
-        </tbody></table></div>
-      </div>
-      <div class="card">
-        <h3>Repeat Failed Attempts (24h)</h3>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Passport</th><th>Failed Attempts</th></tr></thead><tbody>
-          ${d.repeat_offenders.map((r) => `<tr><td>${esc(r.passport_id)}</td><td><span class="status warn">${n(r.failed_attempts)}</span></td></tr>`).join("") || `<tr><td colspan="2" class="muted">None.</td></tr>`}
-        </tbody></table></div>
-        <h3 style="margin-top:14px">Top Failure Reasons (24h)</h3>
-        ${d.failure_reasons.map((r) => `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #eee9df"><span class="muted">${esc(r.reason)}</span><b>${n(r.attempts)}</b></div>`).join("") || `<p class="muted">No failures logged.</p>`}
-      </div>
-    </div>`;
 }
 
 // =================================================================
