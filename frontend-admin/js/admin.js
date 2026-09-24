@@ -352,20 +352,47 @@ async function setStudentStatus(passportId, status) {
 // CHECKPOINTS & QR
 // =================================================================
 let checkpointCache = [];
+let showAllCheckpoints = false;
+
+// Default view: only ACTIVE checkpoints, and only one row per checkpoint
+// number (stamp_number + bonus flag). The list comes back ordered by
+// is_bonus, stamp_number, created_at, so if duplicates are somehow active
+// at the same time, the oldest one is kept. The full list (disabled +
+// duplicates) is one click away via the "Show all" toggle, which is also
+// how you re-enable a checkpoint you disabled.
+function visibleCheckpoints(items) {
+  if (showAllCheckpoints) return items;
+  const seen = new Set();
+  return items.filter((c) => {
+    if (!c.is_active) return false;
+    const key = (c.is_bonus ? "B" : "S") + c.stamp_number;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function toggleShowAllCheckpoints() {
+  showAllCheckpoints = !showAllCheckpoints;
+  renderCheckpoints().catch((x) => { $("content").innerHTML = `<div class="card"><div class="error">${esc(x.message)}</div></div>`; });
+}
+
 async function renderCheckpoints() {
   const d = await api("/api/admin/checkpoints");
-  checkpointCache = d.items;
+  checkpointCache = d.items;               // full list — Edit / QR / Enable look rows up here
+  const rows = visibleCheckpoints(d.items);
+  const hidden = d.items.length - rows.length;
   $("content").innerHTML = `
     <div class="section-head">
       <div><h3>Checkpoint Management</h3><p>Create and configure every hall checkpoint, its geofence and its QR without any code changes.</p></div>
       <div style="display:flex;gap:8px">
         ${d.items.length === 0 ? `<button class="btn" onclick="seedCheckpoints()">Seed Official 15 Checkpoints</button>` : ""}
+        ${d.items.length > 0 ? `<button class="btn" onclick="toggleShowAllCheckpoints()">${showAllCheckpoints ? "Show active only" : `Show all (${hidden} hidden)`}</button>` : ""}
         <button class="btn primary" onclick="openCheckpointModal()">+ New Checkpoint</button>
       </div>
     </div>
     ${d.items.length === 0 ? `<div class="card"><p class="muted" style="margin:0">No checkpoints yet. Click <b>Seed Official 15 Checkpoints</b> to create the 10 compulsory + 5 bonus hall checkpoints from the BRD in one go (each gets its own QR), then edit each one to set its GPS latitude/longitude from the on-site survey before going live.</p></div>` : ""}
     <div class="card table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Hall</th><th>Theme</th><th>Type</th><th>Geo</th><th>Fallback Code</th><th>Active</th><th>Responses</th><th></th></tr></thead><tbody>
-      ${d.items.map((c) => `<tr>
+      ${rows.map((c) => `<tr>
         <td>${c.is_bonus ? "B" + c.stamp_number : c.stamp_number}</td>
         <td>${esc(c.hall_zone)}</td><td>${esc(c.theme)}</td><td>${esc(c.answer_type)}</td>
         <td>${c.latitude != null ? c.geofence_radius_m + "m" : `<span class="status warn">Set GPS</span>`}</td>
@@ -378,7 +405,7 @@ async function renderCheckpoints() {
           <button class="btn small" onclick="rotateQr('${c.id}')" title="Invalidates the current QR permanently and issues a new one — use only if a QR is lost/leaked">Invalidate &amp; Reissue</button>
           <button class="btn small" onclick="toggleCheckpoint('${c.id}',${!c.is_active})">${c.is_active ? "Disable" : "Enable"}</button>
         </td>
-      </tr>`).join("")}
+      </tr>`).join("") || `<tr><td colspan="9" class="muted">No active checkpoints. Click "Show all" to see disabled ones.</td></tr>`}
     </tbody></table></div>`;
 }
 
