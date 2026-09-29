@@ -1,0 +1,123 @@
+/* =====================================================================
+   UPITS 2026 Admin Portal — polish layer (load AFTER admin.css)
+   Purely visual: every id, class and inline style admin.js/ui.js reads
+   or writes (hidden, active, zero, nav-open, past/today/live/done,
+   the inline "background:#eee9df" / "var(--saffron)" style selectors)
+   is left exactly as admin.css defined it. Nothing here is renamed,
+   so the dashboard's behaviour is untouched — only shadows, gradients,
+   spacing and a few decorative touches are added or deepened.
+   To roll back: remove the one <link> line that loads this file.
+   ===================================================================== */
+
+   :root{
+    --shadow-sm:0 1px 2px rgba(36,29,92,.05), 0 2px 8px rgba(36,29,92,.06);
+    --shadow-md:0 2px 6px rgba(36,29,92,.06), 0 10px 26px rgba(36,29,92,.10);
+    --shadow-lg:0 8px 20px rgba(36,29,92,.12), 0 24px 48px -12px rgba(36,29,92,.22);
+    --glow-magenta:0 6px 16px rgba(196,32,122,.30);
+  }
+  
+  /* ---------- sidebar ---------- */
+  .sidebar{ box-shadow: var(--shadow-sm); }
+  .brand{ position:relative; }
+  .brand::after{
+    content:""; position:absolute; left:10px; right:10px; bottom:6px; height:1px;
+    background:linear-gradient(90deg, transparent, var(--line-2) 25%, var(--line-2) 75%, transparent);
+  }
+  .nav{ position:relative; }
+  .nav:hover{ background:#FBF1EB; transform:translateX(1px); }
+  .nav.active{
+    background:linear-gradient(90deg, var(--magenta-t) 0%, #FBEAF3 100%);
+    color:var(--magenta-d);
+    box-shadow: inset 0 0 0 1px rgba(196,32,122,.12);
+  }
+  .nav.active::before{
+    content:""; position:absolute; left:-12px; top:50%; transform:translateY(-50%);
+    width:4px; height:20px; border-radius:0 4px 4px 0;
+    background:linear-gradient(180deg, var(--magenta), var(--purple));
+  }
+  .nav b{ box-shadow:0 2px 6px rgba(196,32,122,.35); }
+  .side-footer input{ transition:border-color .15s, box-shadow .15s; }
+  .side-footer input:focus{ box-shadow:0 0 0 3px rgba(196,32,122,.14); }
+  
+  /* ---------- buttons ---------- */
+  .btn{ box-shadow: var(--shadow-sm); }
+  .btn:hover{ box-shadow: var(--shadow-md); transform:translateY(-1px); }
+  .btn:active{ transform:translateY(0) scale(.98); box-shadow:var(--shadow-sm); }
+  .btn.primary{
+    background:var(--brand-grad); border-color:transparent;
+    box-shadow: var(--glow-magenta);
+  }
+  .btn.primary:hover{
+    background:var(--brand-grad); filter:brightness(1.06);
+    box-shadow:0 10px 22px rgba(196,32,122,.36); border-color:transparent;
+  }
+  .btn.danger{ box-shadow:0 2px 8px rgba(179,38,30,.14); }
+  .btn.danger:hover{ box-shadow:0 6px 16px rgba(179,38,30,.22); }
+  .icon-btn:hover{ transform:rotate(90deg); }
+  
+  /* ---------- metric tiles ---------- */
+  .metric{
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow .2s var(--ease), transform .2s var(--ease);
+    position:relative; overflow:hidden;
+  }
+  .metric::after{
+    content:""; position:absolute; right:-18px; top:-18px; width:64px; height:64px; border-radius:50%;
+    background:radial-gradient(circle, rgba(255,255,255,.35), transparent 70%);
+    pointer-events:none;
+  }
+  @media (hover:hover) and (pointer:fine){
+    .metric:hover{ box-shadow: var(--shadow-md); transform:translateY(-2px); }
+  }
+  .metrics:not([style]) > .metric:first-child{
+    box-shadow:0 10px 26px rgba(93,42,142,.30);
+  }
+  .metric strong{ text-shadow:0 1px 0 rgba(255,255,255,.35); }
+  .metrics:not([style]) > .metric:first-child strong{ text-shadow:none; }
+  
+  /* ---------- cards ---------- */
+  .card{ box-shadow: var(--shadow-sm); transition: box-shadow .2s var(--ease); }
+  .card.table-wrap{ box-shadow: var(--shadow-sm); }
+  .section-head h3{
+    background: var(--brand-grad); -webkit-background-clip:text; background-clip:text;
+    -webkit-text-fill-color:transparent; color:transparent; display:inline-block;
+  }
+  
+  /* ---------- tables ---------- */
+  .data-table th{ background:linear-gradient(180deg, #FDF7F2, #FBF3EE); }
+  .data-table th:first-child{ border-top-left-radius:12px; }
+  .data-table th:last-child{ border-top-right-radius:12px; }
+  .data-table tbody tr:hover td{ background:#FFF9F5; box-shadow: inset 3px 0 0 var(--magenta); }
+  .status{ box-shadow: inset 0 0 0 1px rgba(0,0,0,.04); }
+  
+  /* ---------- pills / tabs / days ---------- */
+  .pill-tabs button.active{ background:var(--ink); box-shadow:0 4px 12px rgba(36,29,92,.28); }
+  .day{ box-shadow:0 2px 6px rgba(0,0,0,.14); transition:transform .15s var(--ease); }
+  .day.today{ box-shadow:0 0 0 3px rgba(255,255,255,.9), 0 0 0 5px var(--ink), 0 4px 10px rgba(0,0,0,.2); outline:none; }
+  .lang-toggle:hover{ box-shadow:0 4px 12px rgba(196,32,122,.18); }
+  
+  /* ---------- forms ---------- */
+  input:focus,select:focus,textarea:focus{ box-shadow:0 0 0 4px rgba(196,32,122,.14); }
+  
+  /* ---------- modals / toast ---------- */
+  .modal-card{ box-shadow: var(--shadow-lg); }
+  .toast{ box-shadow:0 16px 40px rgba(20,10,60,.35); }
+  .icon-btn{ transition: background .15s, color .15s, transform .2s var(--ease); }
+  
+  /* ---------- login ---------- */
+  .login-art::before,.login-art::after{ box-shadow:0 0 12px rgba(196,32,122,.08); }
+  .login-logo{ filter:drop-shadow(0 10px 20px rgba(93,42,142,.18)); }
+  .login-lotus{ filter:drop-shadow(0 14px 26px rgba(93,42,142,.16)); }
+  .login-panel{ position:relative; }
+  .login-card{ animation: loginIn .5s var(--ease) backwards .05s; }
+  @keyframes loginIn{ from{ opacity:0; transform:translateY(10px);} to{ opacity:1; transform:none; } }
+  .login-mark{ filter:drop-shadow(0 4px 10px rgba(36,29,92,.12)); }
+  .login-card form .btn.primary{ box-shadow: var(--glow-magenta); }
+  .days .day{ animation: dayIn .4s var(--ease) backwards; }
+  .day.d1{ animation-delay:.02s } .day.d2{ animation-delay:.06s } .day.d3{ animation-delay:.10s }
+  .day.d4{ animation-delay:.14s } .day.d5{ animation-delay:.18s }
+  @keyframes dayIn{ from{ opacity:0; transform:translateY(6px) scale(.85);} to{ opacity:1; transform:none;} }
+  
+  @media (prefers-reduced-motion:reduce){
+    .login-card,.day,.nav,.metric,.btn,.icon-btn{ animation:none!important; transition:none!important; }
+  }
