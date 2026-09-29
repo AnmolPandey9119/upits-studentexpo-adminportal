@@ -249,12 +249,12 @@ async def dashboard():
         # Hall-wise footfall, right on the dashboard (full breakdown still
         # lives on the Footfall & Routes screen) — top 10 busiest halls.
         hall_wise = await conn.fetch('''
-            SELECT c.hall_zone, c.theme, c.is_bonus,
+            SELECT c.hall_zone, c.theme, BOOL_OR(c.is_bonus) AS is_bonus,
                    COUNT(sl.id) FILTER (WHERE sl.result='success') AS successful_scans,
                    COUNT(sl.id) FILTER (WHERE sl.result='failed') AS failed_scans
             FROM checkpoints c LEFT JOIN scan_logs sl ON sl.checkpoint_id = c.id
-            GROUP BY c.id, c.hall_zone, c.theme, c.is_bonus
-            ORDER BY successful_scans DESC LIMIT 10
+            GROUP BY c.hall_zone, c.theme
+            ORDER BY successful_scans DESC, c.hall_zone LIMIT 10
         ''')
         # School/college-wise participation, top 8 by completions (full
         # list still lives on the Institutions screen).
@@ -866,12 +866,12 @@ async def footfall():
     pool = await get_pool()
     async with pool.acquire() as conn:
         hall_wise = await conn.fetch('''
-            SELECT c.hall_zone, c.theme, c.is_bonus,
+            SELECT c.hall_zone, c.theme, BOOL_OR(c.is_bonus) AS is_bonus,
                    COUNT(sl.id) FILTER (WHERE sl.result='success') AS successful_scans,
                    COUNT(sl.id) FILTER (WHERE sl.result='failed') AS failed_scans
             FROM checkpoints c LEFT JOIN scan_logs sl ON sl.checkpoint_id = c.id
-            GROUP BY c.id, c.hall_zone, c.theme, c.is_bonus
-            ORDER BY successful_scans DESC
+            GROUP BY c.hall_zone, c.theme
+            ORDER BY successful_scans DESC, c.hall_zone
         ''')
         route_wise = await conn.fetch('''
             SELECT COALESCE(route_colour,'unassigned') AS route_colour,
