@@ -629,12 +629,27 @@ async function renderScans(result) {
 // =================================================================
 // CERTIFICATES
 // =================================================================
+let certificateItems = [];   // rows currently shown, used by the Print buttons
+
+function certificatePrintData(c) {
+  return { name: c.full_name, institution: c.institution_name, serial: c.serial_number, passportId: c.passport_id, issuedAt: c.issued_at };
+}
+function printCertificateRow(id) {
+  const c = certificateItems.find((x) => String(x.id) === String(id));
+  if (c) printCertificates([certificatePrintData(c)]);
+}
+function printAllCertificates() {
+  printCertificates(certificateItems.map(certificatePrintData));
+}
+
 async function renderCertificates(status) {
   const d = await api("/api/admin/certificates" + (status ? "?status=" + status : ""));
+  certificateItems = d.items;
   $("content").innerHTML = `
     <div class="section-head"><div><h3>Certificate Management</h3><p>Serial numbers, reward points, verification tokens and re-send. Certificates auto-issue the instant a student's 10th compulsory stamp is approved — use Sync below to catch anyone eligible who is still missing one.</p></div>
       <div style="display:flex;gap:8px">
         <button class="btn small" onclick="renderCertificates('${status || ""}')">Refresh</button>
+        <button class="btn small" onclick="printAllCertificates()" ${d.items.length ? "" : "disabled"}>Print all shown (${n(d.items.length)})</button>
         <button class="btn primary small" onclick="syncCertificates('${status || ""}')">Sync Eligible Certificates</button>
       </div>
     </div>
@@ -648,7 +663,7 @@ async function renderCertificates(status) {
       ${d.items.map((c) => `<tr><td class="mono">${esc(c.serial_number)}</td><td>${esc(c.passport_id)}</td><td>${esc(c.full_name)}</td>
         <td>${n(c.total_stamps)}</td><td>${n(c.reward_points)}</td><td>${c.prize_eligible ? "Yes" : "—"}</td><td>${c.priority_draw_eligible ? "Yes" : "—"}</td>
         <td><span class="status ${c.redeemed ? "ok" : "warn"}">${c.redeemed ? fmt(c.redeemed_at) : "Pending"}</span></td>
-        <td><button class="btn small" onclick="resendCertificate('${c.id}')">Re-send</button></td></tr>`).join("") || `<tr><td colspan="9" class="muted">No certificates issued yet.</td></tr>`}
+        <td style="white-space:nowrap"><button class="btn small" onclick="printCertificateRow('${c.id}')">Print</button> <button class="btn small" onclick="resendCertificate('${c.id}')">Re-send</button></td></tr>`).join("") || `<tr><td colspan="9" class="muted">No certificates issued yet.</td></tr>`}
     </tbody></table></div>`;
 }
 

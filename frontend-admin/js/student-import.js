@@ -8,7 +8,8 @@
 //   1. Upload   – pick a .xlsx / .xls / .csv (or download the template)
 //   2. Map      – match spreadsheet columns to student fields (auto-detected)
 //   3. Check    – dry run against the server: ready / already registered / needs fixing
-//   4. Import   – commit in batches, then download a result report (with Passport IDs)
+//   4. Import   – commit in batches (optionally issuing a certificate for each new student),
+//                 then download a result report and print the certificates
 // The server re-validates every row on commit; nothing here is trusted.
 // Re-running the same file is safe: mobiles that already exist are skipped.
 
@@ -22,7 +23,7 @@
     const PROBLEM_ROWS_SHOWN = 100;
   
     const S = {
-      step: 1, busy: false,
+      step: 1, busy: false, issueCerts: true,
       fields: [], serverChunk: 300,
       workbook: null, filename: "", sheetName: "",
       headers: [], rows: [],          // rows: [{ rowNumber, cells: [] }]
@@ -127,6 +128,7 @@
           <li><b>Required:</b> student name, mobile number, institution.</li>
           <li>Students whose <b>mobile number is already registered are skipped</b> — nothing existing is changed, so it's safe to upload the same file twice.</li>
           <li><b>Passport IDs are created automatically</b> and listed in the report you can download afterwards.</li>
+          <li>You can also <b>generate a participation certificate</b> for every imported student and print them all as one PDF.</li>
         </ul>
         <div class="modal-actions">
           <button class="btn" data-act="template" ${libOk ? "" : "disabled"}>Download template</button>
@@ -342,6 +344,9 @@
             </tbody></table></div>
           ${problems.length > PROBLEM_ROWS_SHOWN ? `<p class="muted">Showing the first ${PROBLEM_ROWS_SHOWN} of ${n(problems.length)}. Download the full list below.</p>` : ""}
           <button class="btn small" data-act="dl-problems">Download these rows (CSV)</button>` : `<div class="notice">Every row looks good.</div>`}
+        ${ready ? `<label class="imp-opt"><input type="checkbox" data-opt="certs" ${S.issueCerts ? "checked" : ""}>
+          <span><b>Also generate a participation certificate</b> for each of the ${n(ready)} student${ready === 1 ? "" : "s"} being imported.
+          You can print them all as one PDF when the import finishes.</span></label>` : ""}
         <div id="impError" class="error hidden" role="alert"></div>
         <div class="modal-actions">
           <button class="btn" data-act="back-map">Back</button>
@@ -386,6 +391,7 @@
           const d = await post("/commit", {
             rows: slice.map((i) => ({ row_number: S.rows[i].rowNumber, data: rowData(S.rows[i]) })),
             staff_name: staffName(), filename: S.filename, batch_id: S.batchId,
+            issue_certificates: S.issueCerts,
           });
           d.items.forEach((item, k) => { S.results[slice[k]] = item; });
           S.commitPos += slice.length;
@@ -404,6 +410,8 @@
       const t = tally();
       const imported = t.imported || 0, skipped = (t.duplicate || 0), invalid = t.invalid || 0, failed = t.failed || 0;
       const remaining = S.queue.length - S.commitPos;
+      const certs = certificateList();
+      const certMissing = S.issueCerts ? Math.max(0, imported - certs.length) : 0;
       setBody(`
         ${S.commitError ? `<div class="error" role="alert"><b>The import was interrupted.</b> ${esc(S.commitError)}<br>
           ${n(S.commitPos)} of ${n(S.queue.length)} were processed before it stopped. You can continue safely — students already saved are never added twice.</div>` : ""}
@@ -412,14 +420,17 @@
           <div class="imp-chip ok"><strong>${n(imported)}</strong><span>imported</span></div>
           <div class="imp-chip warn"><strong>${n(skipped)}</strong><span>already registered (skipped)</span></div>
           <div class="imp-chip bad"><strong>${n(invalid + failed)}</strong><span>not imported</span></div>
+          ${S.issueCerts ? `<div class="imp-chip ok"><strong>${n(certs.length)}</strong><span>certificates generated</span></div>` : ""}
           ${remaining > 0 ? `<div class="imp-chip"><strong>${n(remaining)}</strong><span>not processed yet</span></div>` : ""}
         </div>
-        <p class="muted">The report lists every row with its result and the new Passport ID.</p>
+        ${certMissing ? `<div class="error" role="alert">${n(certMissing)} student${certMissing === 1 ? " was" : "s were"} imported but the certificate could not be created. See the report; you can generate it later from Certificates → Generate Certificate.</div>` : ""}
+        <p class="muted">The report lists every row with its result, the new Passport ID and certificate number.</p>
         <div class="modal-actions">
           <button class="btn" data-act="dl-report">Download report (CSV)</button>
+          ${certs.length ? `<button class="btn ${S.commitError ? "" : "primary"}" data-act="print-certs">Print ${n(certs.length)} certificate${certs.length === 1 ? "" : "s"} / Save as PDF</button>` : ""}
           ${S.commitError ? `<button class="btn primary" data-act="resume">Continue import</button>` : `
           <button class="btn" data-act="restart">Import another file</button>
-          <button class="btn primary" data-act="close">Done</button>`}
+          <button class="btn ${certs.length ? "" : "primary"}" data-act="close">Done</button>`}
         </div>`);
     }
   
@@ -446,9 +457,22 @@
       const lines = S.rows.map((row, i) => {
         const r = S.results[i] || {};
         return [row.rowNumber, cell(row, S.mapping.full_name), cell(row, S.mapping.mobile_number), cell(row, S.mapping.institution_name),
-          LABEL[r.status] || "", r.passport_id || "", r.message || ""];
+          LABEL[r.status] || "", r.passport_id || "", r.certificate_serial || "", r.message || ""];
       });
-      downloadCsv(`${baseName()}-import-report.csv`, ["Row", "Student name", "Mobile", "Institution", "Result", "Passport ID", "Note"], lines);
+      downloadCsv(`${baseName()}-import-report.csv`, ["Row", "Student name", "Mobile", "Institution", "Result", "Passport ID", "Certificate No.", "Note"], lines);
+    }
+
+    // Certificates created in this import (name/institution come back from the
+    // server exactly as stored, so the printed certificate matches the record).
+    function certificateList() {
+      return S.results
+        .filter((r) => r && r.status === "imported" && r.certificate_serial)
+        .map((r) => ({ name: r.full_name, institution: r.institution_name, serial: r.certificate_serial,
+                       passportId: r.passport_id, issuedAt: r.certificate_issued_at }));
+    }
+    function printBatchCertificates() {
+      if (typeof window.printCertificates !== "function") return toast("Certificate printing is not loaded. Reload the page.", true);
+      window.printCertificates(certificateList());
     }
   
     function downloadProblems() {
@@ -472,13 +496,15 @@
         case "import": runImport(); break;
         case "resume": continueImport(); break;
         case "dl-report": downloadReport(); break;
+        case "print-certs": printBatchCertificates(); break;
         case "dl-problems": downloadProblems(); break;
       }
     }
   
     function onChange(e) {
       const t = e.target;
-      if (t.id === "impFile" && t.files && t.files[0]) { loadFile(t.files[0]); t.value = ""; }
+      if (t.dataset && t.dataset.opt === "certs") { S.issueCerts = t.checked; }
+      else if (t.id === "impFile" && t.files && t.files[0]) { loadFile(t.files[0]); t.value = ""; }
       else if (t.id === "impSheet") {
         selectSheet(t.value);
         renderMapping();

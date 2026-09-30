@@ -18,6 +18,10 @@ Rules enforced here (not trusted from the browser):
   * mobiles are stored in the same format your student backend already
     uses (detected from an existing row), so imported students can log in
   * one audit-log entry per batch
+  * optional (issue_certificates=true): a certificate row is created for every
+    student imported in the same transaction. These students did not collect
+    stamps in the app, so the certificate is a participation certificate:
+    0 stamps, no prize / priority-draw eligibility, 0 reward points.
 The importer only writes to columns that exist in the live table, and
 fills any NOT NULL column it has no data for (see _students_schema).
 """
@@ -64,6 +68,7 @@ class CommitPayload(ValidatePayload):
     staff_name: Optional[str] = Field(default=None, max_length=120)
     filename: Optional[str] = Field(default=None, max_length=200)
     batch_id: Optional[str] = Field(default=None, max_length=60)
+    issue_certificates: bool = False
 
 
 # =========================================================================
@@ -199,7 +204,7 @@ def _public(item: dict) -> dict:
     message = item["message"]
     if not message and item["warnings"]:
         message = " ".join(item["warnings"])
-    return {
+    out = {
         "row_number": item["row_number"],
         "status": item["status"],
         "mobile_key": item["mobile_key"],
@@ -207,6 +212,13 @@ def _public(item: dict) -> dict:
         "message": message,
         "warnings": item["warnings"],
     }
+    if item["status"] == "imported":
+        # Exactly what was stored (cleaned) — used to print the certificate.
+        out["full_name"] = item["clean"]["full_name"]
+        out["institution_name"] = item["clean"]["institution_name"]
+        out["certificate_serial"] = item.get("certificate_serial")
+        out["certificate_issued_at"] = item.get("certificate_issued_at")
+    return out
 
 
 def _counts(items: list[dict]) -> dict:
@@ -261,9 +273,10 @@ def _record_values(item: dict, ctx: dict) -> dict:
     return values
 
 
-async def _bulk_insert(conn, items: list[dict], ctx: dict) -> set[str]:
-    """One round-trip INSERT ... SELECT FROM unnest(...). Returns the set of
-    passport_ids actually inserted (ON CONFLICT DO NOTHING skips races)."""
+async def _bulk_insert(conn, items: list[dict], ctx: dict) -> dict[str, str]:
+    """One round-trip INSERT ... SELECT FROM unnest(...). Returns
+    {passport_id: student uuid} for the rows actually inserted (ON CONFLICT
+    DO NOTHING skips races)."""
     cols = ctx["insert_cols"]
     fills = ctx["fills"]
     arrays: list[list] = [[] for _ in cols]
@@ -285,10 +298,10 @@ async def _bulk_insert(conn, items: list[dict], ctx: dict) -> set[str]:
     sql = (
         f"INSERT INTO students ({col_list}) "
         f"SELECT {', '.join(select_exprs)} FROM unnest({unnest_args}) AS u({aliases}) "
-        f"ON CONFLICT DO NOTHING RETURNING passport_id"
+        f"ON CONFLICT DO NOTHING RETURNING id, passport_id"
     )
     recs = await conn.fetch(sql, *arrays)
-    return {r["passport_id"] for r in recs}
+    return {r["passport_id"]: str(r["id"]) for r in recs}
 
 
 def _friendly_db_error(exc: Exception) -> str:
@@ -303,7 +316,7 @@ def _friendly_db_error(exc: Exception) -> str:
     return "The database rejected this row."
 
 
-async def _insert_items(conn, items: list[dict], ctx: dict) -> tuple[set[str], dict[str, str]]:
+async def _insert_items(conn, items: list[dict], ctx: dict) -> tuple[dict[str, str], dict[str, str]]:
     """Fast path: whole batch in one statement (in a savepoint). If the
     database rejects anything, retry row-by-row so one bad row can't take
     the rest down, and report exactly which rows failed and why."""
@@ -313,16 +326,66 @@ async def _insert_items(conn, items: list[dict], ctx: dict) -> tuple[set[str], d
     except asyncpg.PostgresError as exc:
         print(f"student-import: bulk insert failed ({exc!r}); retrying row by row")
 
-    inserted: set[str] = set()
+    inserted: dict[str, str] = {}
     failed: dict[str, str] = {}
     for item in items:
         try:
             async with conn.transaction():
-                inserted |= await _bulk_insert(conn, [item], ctx)
+                inserted.update(await _bulk_insert(conn, [item], ctx))
         except asyncpg.PostgresError as exc:
             print(f"student-import: row {item['row_number']} rejected ({exc!r})")
             failed[item["passport_id"]] = _friendly_db_error(exc)
     return inserted, failed
+
+
+# =========================================================================
+# Certificates for imported students
+# =========================================================================
+_CERT_INSERT = """
+    INSERT INTO certificates
+        (student_id, serial_number, total_stamps, prize_eligible,
+         priority_draw_eligible, reward_points, issued_at)
+    SELECT u.sid::uuid, u.serial, 0, false, false, 0, now()
+    FROM unnest($1::text[], $2::text[]) AS u(sid, serial)
+    ON CONFLICT DO NOTHING
+    RETURNING student_id::text AS sid, serial_number, issued_at
+"""
+
+
+async def _issue_certificates(conn, students: dict[str, str]) -> tuple[dict[str, dict], dict[str, str]]:
+    """students = {passport_id: student uuid}. Creates one certificate each
+    (serial `<passport_id>-CERT`, same pattern as the stamp-based flow, so
+    Redemption Desk / Re-send keep working). A student who already has a
+    certificate is left alone.
+
+    Returns (issued {passport_id: {serial, issued_at}}, failed {passport_id: reason}).
+    A certificate problem never undoes the student import itself."""
+    if not students:
+        return {}, {}
+    by_sid = {sid: pid for pid, sid in students.items()}
+
+    async def run(pids: list[str]) -> dict[str, dict]:
+        sids = [students[p] for p in pids]
+        serials = [f"{p}-CERT" for p in pids]
+        async with conn.transaction():  # savepoint
+            recs = await conn.fetch(_CERT_INSERT, sids, serials)
+        return {by_sid[r["sid"]]: {"serial": r["serial_number"], "issued_at": r["issued_at"].isoformat()} for r in recs}
+
+    pids = list(students)
+    try:
+        return await run(pids), {}
+    except asyncpg.PostgresError as exc:
+        print(f"student-import: bulk certificate insert failed ({exc!r}); retrying one by one")
+
+    issued: dict[str, dict] = {}
+    failed: dict[str, str] = {}
+    for pid in pids:
+        try:
+            issued.update(await run([pid]))
+        except asyncpg.PostgresError as exc:
+            print(f"student-import: certificate for {pid} rejected ({exc!r})")
+            failed[pid] = "Student saved, but the certificate could not be created."
+    return issued, failed
 
 
 # =========================================================================
@@ -359,10 +422,19 @@ async def commit_import(payload: CommitPayload):
                 for offset, item in enumerate(ready, start=1):
                     item["passport_id"] = si.format_passport_id(last + offset)
                 inserted, failed = await _insert_items(conn, ready, ctx)
+                cert_issued: dict[str, dict] = {}
+                cert_failed: dict[str, str] = {}
+                if payload.issue_certificates and inserted:
+                    cert_issued, cert_failed = await _issue_certificates(conn, inserted)
                 for item in ready:
                     pid = item["passport_id"]
                     if pid in inserted:
                         item["status"] = "imported"
+                        if pid in cert_issued:
+                            item["certificate_serial"] = cert_issued[pid]["serial"]
+                            item["certificate_issued_at"] = cert_issued[pid]["issued_at"]
+                        elif pid in cert_failed:
+                            item["message"] = cert_failed[pid]
                     elif pid in failed:
                         item["status"] = "failed"
                         item["message"] = failed[pid]
@@ -373,14 +445,22 @@ async def commit_import(payload: CommitPayload):
                         item["passport_id"] = None
 
     counts = _counts(items)
+    certificates_issued = sum(1 for i in items if i.get("certificate_serial"))
     try:
         await audit(
             "student_import", "students", payload.batch_id,
             {"filename": payload.filename, "rows": len(items), **counts,
+             "issue_certificates": payload.issue_certificates,
+             "certificates_issued": certificates_issued,
              "first_passport": next((i["passport_id"] for i in items if i["status"] == "imported"), None)},
             payload.staff_name,
         )
     except Exception as exc:  # never undo a finished import because logging failed
         print(f"student-import: audit log write failed ({exc!r})")
 
-    return {"batch_id": payload.batch_id, "counts": counts, "items": [_public(i) for i in items]}
+    return {
+        "batch_id": payload.batch_id,
+        "counts": counts,
+        "certificates_issued": certificates_issued,
+        "items": [_public(i) for i in items],
+    }
