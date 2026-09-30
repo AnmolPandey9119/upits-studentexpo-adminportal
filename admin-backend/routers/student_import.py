@@ -305,15 +305,21 @@ async def _bulk_insert(conn, items: list[dict], ctx: dict) -> dict[str, str]:
 
 
 def _friendly_db_error(exc: Exception) -> str:
+    """Admin-facing reason a row was rejected. Includes the database's own
+    detail (constraint / column) so the real cause is visible in the report."""
+    constraint = getattr(exc, "constraint_name", None)
+    column = getattr(exc, "column_name", None)
+    detail = " ".join(str(exc).split())[:160]
     if isinstance(exc, asyncpg.UniqueViolationError):
-        return "Already exists (duplicate value)."
+        return f"Already exists (duplicate value{f' — {constraint}' if constraint else ''})."
     if isinstance(exc, asyncpg.CheckViolationError):
-        return f"A value isn't allowed by the database rules ({getattr(exc, 'constraint_name', None) or 'check'})."
+        return (f"A value isn't allowed by the database rule '{constraint or 'check'}' "
+                "(usually Student category, Age group, Class or Route colour has a value the database doesn't accept).")
     if isinstance(exc, asyncpg.StringDataRightTruncationError):
-        return "A value is too long for its column."
+        return f"A value is too long for its column. ({detail})"
     if isinstance(exc, asyncpg.NotNullViolationError):
-        return f"A required value is missing ({getattr(exc, 'column_name', None) or 'column'})."
-    return "The database rejected this row."
+        return f"A required value is missing ({column or 'column'})."
+    return f"Database error: {type(exc).__name__}: {detail}"
 
 
 async def _insert_items(conn, items: list[dict], ctx: dict) -> tuple[dict[str, str], dict[str, str]]:

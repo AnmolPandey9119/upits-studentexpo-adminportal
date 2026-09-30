@@ -411,11 +411,14 @@
       const imported = t.imported || 0, skipped = (t.duplicate || 0), invalid = t.invalid || 0, failed = t.failed || 0;
       const remaining = S.queue.length - S.commitPos;
       const certs = certificateList();
+      const rejected = S.rows.map((row, i) => ({ row, res: S.results[i] }))
+        .filter((x) => x.res && (x.res.status === "failed" || x.res.status === "invalid"));
       const certMissing = S.issueCerts ? Math.max(0, imported - certs.length) : 0;
       setBody(`
         ${S.commitError ? `<div class="error" role="alert"><b>The import was interrupted.</b> ${esc(S.commitError)}<br>
           ${n(S.commitPos)} of ${n(S.queue.length)} were processed before it stopped. You can continue safely — students already saved are never added twice.</div>` : ""}
-        ${!S.commitError ? `<div class="notice imp-done"><b>Import finished.</b> ${n(imported)} student${imported === 1 ? "" : "s"} added.</div>` : ""}
+        ${!S.commitError && imported === 0 && rejected.length ? `<div class="error" role="alert"><b>Nothing was imported.</b> The reasons are listed below.</div>` : ""}
+        ${!S.commitError && !(imported === 0 && rejected.length) ? `<div class="notice imp-done"><b>Import finished.</b> ${n(imported)} student${imported === 1 ? "" : "s"} added.</div>` : ""}
         <div class="imp-chips">
           <div class="imp-chip ok"><strong>${n(imported)}</strong><span>imported</span></div>
           <div class="imp-chip warn"><strong>${n(skipped)}</strong><span>already registered (skipped)</span></div>
@@ -423,6 +426,14 @@
           ${S.issueCerts ? `<div class="imp-chip ok"><strong>${n(certs.length)}</strong><span>certificates generated</span></div>` : ""}
           ${remaining > 0 ? `<div class="imp-chip"><strong>${n(remaining)}</strong><span>not processed yet</span></div>` : ""}
         </div>
+        ${rejected.length ? `<h3 class="imp-h">Rows that were not imported</h3>
+          <div class="table-wrap imp-problems"><table class="data-table">
+            <thead><tr><th>Row</th><th>Name</th><th>Mobile</th><th>Why</th></tr></thead>
+            <tbody>${rejected.slice(0, PROBLEM_ROWS_SHOWN).map(({ row, res }) => `
+              <tr><td>${row.rowNumber}</td><td>${esc(cell(row, S.mapping.full_name) || "—")}</td><td>${esc(cell(row, S.mapping.mobile_number) || "—")}</td>
+              <td class="imp-why">${esc(res.message || "No reason returned by the server.")}</td></tr>`).join("")}
+            </tbody></table></div>
+          ${rejected.length > PROBLEM_ROWS_SHOWN ? `<p class="muted">Showing the first ${PROBLEM_ROWS_SHOWN} of ${n(rejected.length)}. The CSV report has all of them.</p>` : ""}` : ""}
         ${certMissing ? `<div class="error" role="alert">${n(certMissing)} student${certMissing === 1 ? " was" : "s were"} imported but the certificate could not be created. See the report; you can generate it later from Certificates → Generate Certificate.</div>` : ""}
         <p class="muted">The report lists every row with its result, the new Passport ID and certificate number.</p>
         <div class="modal-actions">
