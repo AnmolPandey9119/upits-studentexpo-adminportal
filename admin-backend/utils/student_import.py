@@ -30,7 +30,7 @@ FIELDS: list[dict] = [
      "synonyms": ["mobile", "mobileno", "mobilenumber", "phone", "phoneno", "phonenumber",
                   "contact", "contactno", "contactnumber", "whatsapp", "whatsappnumber",
                   "studentmobile", "studentphone", "studentcontact"]},
-    {"key": "institution_name", "label": "Institution", "required": True, "kind": "text",
+    {"key": "institution_name", "label": "Institution", "required": False, "kind": "text",
      "synonyms": ["institution", "institutionname", "school", "schoolname", "college",
                   "collegename", "university", "organisation", "organization",
                   "nameofinstitution", "nameofschool", "nameofcollege", "schoolcollege",
