@@ -254,3 +254,49 @@ def validate_row(data: dict, max_lengths: Optional[dict] = None) -> dict:
         "errors": errors,
         "warnings": warnings,
     }
+
+
+# ---------------------------------------------------------------------------
+# Values restricted by a database CHECK rule (e.g. students_age_group_check)
+# ---------------------------------------------------------------------------
+_RANGE = re.compile(r"^\s*(\d+)\s*(?:-|–|—|to)\s*(\d+)\s*(?:yrs?|years?)?\s*$", re.I)
+_PLUS = re.compile(r"^\s*(\d+)\s*\+\s*(?:yrs?|years?)?\s*$", re.I)
+_BELOW = re.compile(r"^\s*(?:below|under|upto|up to|<)\s*(\d+)", re.I)
+_ABOVE = re.compile(r"^\s*(?:above|over|>)\s*(\d+)", re.I)
+
+
+def _number_fits(num: int, option: str) -> bool:
+    m = _RANGE.match(option)
+    if m:
+        return int(m.group(1)) <= num <= int(m.group(2))
+    m = _PLUS.match(option)
+    if m:
+        return num >= int(m.group(1))
+    m = _BELOW.match(option)
+    if m:
+        return num < int(m.group(1))
+    m = _ABOVE.match(option)
+    if m:
+        return num > int(m.group(1))
+    return False
+
+
+def resolve_allowed(value: Optional[str], allowed: list[str]) -> Optional[str]:
+    """Map a spreadsheet value onto one of the values a database CHECK rule
+    accepts. Tries: exact, case/punctuation-insensitive ('Under 18' ->
+    'under_18'), then a plain number against ranges ('15' -> '13-15',
+    '19' -> '18+'). Returns None when nothing fits."""
+    if value is None or not allowed:
+        return None
+    if value in allowed:
+        return value
+    key = normalize_header(value)
+    for a in allowed:
+        if normalize_header(a) == key and key:
+            return a
+    if re.fullmatch(r"\d{1,3}", value.strip()):
+        num = int(value.strip())
+        for a in allowed:
+            if _number_fits(num, a):
+                return a
+    return None

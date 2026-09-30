@@ -326,6 +326,7 @@
       const mob = (row) => cell(row, S.mapping.mobile_number) || "—";
       const problems = S.rows.map((row, i) => ({ row, res: S.results[i] })).filter((x) => x.res.status !== "ready");
       const warned = S.results.filter((r) => r.status === "ready" && r.warnings && r.warnings.length).length;
+      const warnTexts = [...new Set(S.results.filter((r) => r.status === "ready" && r.warnings).flatMap((r) => r.warnings))];
   
       setBody(`
         <div class="imp-chips">
@@ -333,7 +334,8 @@
           <div class="imp-chip warn"><strong>${n(dup)}</strong><span>already registered / repeated (skipped)</span></div>
           <div class="imp-chip bad"><strong>${n(bad)}</strong><span>need fixing (skipped)</span></div>
         </div>
-        ${warned ? `<p class="muted">${n(warned)} ready row${warned === 1 ? " has" : "s have"} an optional value (email or teacher mobile) that will be left blank because it wasn't valid.</p>` : ""}
+        ${warned ? `<p class="muted">${n(warned)} ready row${warned === 1 ? " has" : "s have"} an optional value (e.g. email, teacher mobile or age group) that will be left blank because it wasn't valid.</p>
+          <ul class="muted imp-rules">${warnTexts.slice(0, 5).map((w) => `<li>${esc(w)}</li>`).join("")}${warnTexts.length > 5 ? `<li>…and ${n(warnTexts.length - 5)} more</li>` : ""}</ul>` : ""}
         ${problems.length ? `
           <h3 class="imp-h">Rows that won't be imported</h3>
           <div class="table-wrap imp-problems"><table class="data-table">

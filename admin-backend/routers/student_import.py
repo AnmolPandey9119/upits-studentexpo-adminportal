@@ -26,6 +26,7 @@ The importer only writes to columns that exist in the live table, and
 fills any NOT NULL column it has no data for (see _students_schema).
 """
 
+import re
 import time
 from typing import Any, Optional
 
@@ -128,6 +129,7 @@ async def _students_schema(conn) -> dict:
         )
 
     value = {
+        "allowed": await _allowed_values(conn, insert_cols),
         "cols": cols,
         "insert_cols": insert_cols,
         "fills": fills,
@@ -139,6 +141,42 @@ async def _students_schema(conn) -> dict:
     }
     _schema_cache.update(at=now, value=value)
     return value
+
+
+_QUOTED = re.compile(r"'((?:[^']|'')*)'")
+
+
+async def _allowed_values(conn, insert_cols: list[str]) -> dict[str, list[str]]:
+    """Reads simple CHECK rules such as  CHECK (age_group IN ('a','b'))  from
+    the live table -> {column: [allowed values]}, so the importer can match
+    spreadsheet values to what the database accepts instead of guessing.
+    Only single-column, list-style rules are used; anything else is ignored
+    (the database still enforces it and reports the row as failed)."""
+    try:
+        recs = await conn.fetch(
+            """
+            SELECT pg_get_constraintdef(c.oid) AS def,
+                   (SELECT array_agg(a.attname::text) FROM unnest(c.conkey) k
+                      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k) AS cols
+            FROM pg_constraint c
+            WHERE c.conrelid = 'students'::regclass AND c.contype = 'c'
+            """
+        )
+    except asyncpg.PostgresError as exc:
+        print(f"student-import: could not read CHECK rules ({exc!r})")
+        return {}
+    allowed: dict[str, list[str]] = {}
+    for r in recs:
+        cols = r["cols"] or []
+        d = r["def"] or ""
+        if len(cols) != 1 or cols[0] not in insert_cols:
+            continue
+        if "ANY" not in d and " IN " not in d.upper():
+            continue
+        values = [v.replace("''", "'") for v in _QUOTED.findall(d)]
+        if values:
+            allowed.setdefault(cols[0], []).extend(values)
+    return allowed
 
 
 async def _context(conn) -> dict:
@@ -166,12 +204,34 @@ async def _existing_students(conn, keys: list[str]) -> dict[str, str]:
     return {si.mobile_key(r["mobile_number"]): r["passport_id"] for r in recs}
 
 
+def _apply_allowed_values(res: dict, ctx: dict) -> None:
+    """Match values to what the database's CHECK rules accept. An optional
+    value that fits nothing is left blank (with a warning naming the
+    allowed values) so the student can still be imported."""
+    for col, allowed in ctx.get("allowed", {}).items():
+        value = res["clean"].get(col)
+        if not value:
+            continue
+        match = si.resolve_allowed(value, allowed)
+        if match is not None:
+            res["clean"][col] = match
+            continue
+        label = next((f["label"] for f in si.FIELDS if f["key"] == col), col)
+        shown = ", ".join(allowed[:12]) + (" …" if len(allowed) > 12 else "")
+        if ctx["cols"][col]["is_nullable"] == "YES":
+            res["clean"][col] = None
+            res["warnings"].append(f"{label} '{value}' ignored — the database only accepts: {shown}.")
+        else:
+            res["errors"].append(f"{label} '{value}' is not accepted — allowed: {shown}.")
+
+
 async def _classify(conn, rows: list[ImportRow], ctx: dict) -> list[dict]:
     items: list[dict] = []
     first_seen: dict[str, int] = {}
 
     for r in rows:
         res = si.validate_row(r.data, ctx["max_lengths"])
+        _apply_allowed_values(res, ctx)
         item = {
             "row_number": r.row_number,
             "clean": res["clean"],
