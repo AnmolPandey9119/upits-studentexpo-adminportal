@@ -16,6 +16,7 @@ Run locally:
 Deployed on Vercel via api/index.py (see that file + vercel.json).
 """
 
+import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -24,7 +25,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from database import get_pool, close_pool, run_schema
-from routers import admin, student_import
+from routers import admin
+
+# The Excel student-import feature is loaded defensively: if it ever fails
+# to import, the rest of the admin API (dashboard, students, ...) must
+# still start. The reason is printed in the Vercel function logs.
+try:
+    from routers import student_import
+except Exception as exc:  # pragma: no cover
+    student_import = None
+    print(f"WARNING: student import router not loaded ({exc!r}).")
 
 
 @asynccontextmanager
@@ -43,6 +53,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# An unhandled error normally produces a bare 500 that is sent WITHOUT CORS
+# headers, so the browser reports it as a confusing "blocked by CORS
+# policy" instead of the real problem. This catches such errors, logs the
+# traceback, and answers with a JSON 500 that goes through CORS below.
+# (It must be registered BEFORE CORSMiddleware so CORS is the outer layer.)
+@app.middleware("http")
+async def catch_unhandled_errors(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Server error ({type(exc).__name__}). Check the admin-backend function logs."},
+        )
+
+
 # Open CORS since the admin frontend is a separate static deployment on
 # its own domain. Tighten to the exact frontend domain once you know it.
 app.add_middleware(
@@ -54,7 +81,8 @@ app.add_middleware(
 
 app.include_router(admin.auth_router)
 app.include_router(admin.router)
-app.include_router(student_import.router)
+if student_import is not None:
+    app.include_router(student_import.router)
 
 
 @app.exception_handler(RequestValidationError)
