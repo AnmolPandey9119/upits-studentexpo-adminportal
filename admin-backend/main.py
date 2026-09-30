@@ -30,10 +30,12 @@ from routers import admin
 # The Excel student-import feature is loaded defensively: if it ever fails
 # to import, the rest of the admin API (dashboard, students, ...) must
 # still start. The reason is printed in the Vercel function logs.
+student_import_error = None
 try:
     from routers import student_import
 except Exception as exc:  # pragma: no cover
     student_import = None
+    student_import_error = f"{type(exc).__name__}: {exc}"[:200]
     print(f"WARNING: student import router not loaded ({exc!r}).")
 
 
@@ -99,4 +101,11 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "service": "upits-admin-backend"}
+    # `student_import` tells you at a glance whether the Excel-import
+    # feature is deployed and loaded (false + a reason if it is not).
+    return {
+        "status": "ok",
+        "service": "upits-admin-backend",
+        "student_import": student_import is not None,
+        **({"student_import_error": student_import_error} if student_import_error else {}),
+    }
