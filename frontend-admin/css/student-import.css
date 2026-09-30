@@ -1,0 +1,53 @@
+/* Student import wizard — see js/student-import.js. Uses the tokens from admin.css. */
+.imp-card{width:min(860px,100%)}
+.imp-steps{list-style:none;display:flex;gap:6px;margin:14px 0 18px;padding:0;flex-wrap:wrap}
+.imp-steps li{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--faint);padding:5px 12px 5px 6px;border-radius:999px;background:#F7EEE8}
+.imp-steps li span{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#fff;color:var(--muted);font-size:12px}
+.imp-steps li.on{background:var(--magenta-t);color:var(--magenta-d)}
+.imp-steps li.on span{background:var(--magenta);color:#fff}
+.imp-steps li.done{color:var(--green);background:#E4F4EA}
+.imp-steps li.done span{background:var(--green);color:#fff}
+
+.imp-lead{margin:0 0 14px}
+.imp-drop{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;padding:34px 20px;cursor:pointer;
+  border:2px dashed var(--line-2);border-radius:var(--r-m);background:#FFFAF7;transition:border-color .15s,background .15s}
+.imp-drop:hover,.imp-drop.over,.imp-drop:focus-visible{border-color:var(--magenta);background:var(--magenta-t)}
+.imp-drop strong{font-size:15px;color:var(--ink)}
+.imp-drop span{color:var(--muted);font-size:13px}
+.imp-drop small{color:var(--faint);font-size:12px;margin-top:6px}
+.imp-rules{margin:16px 0 0;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.7}
+.imp-rules b{color:var(--ink-2)}
+
+.imp-file{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;margin-bottom:12px;border-radius:12px;background:#FFF6F1}
+.imp-file span{color:var(--muted);font-size:12.5px}
+.imp-sheet{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.imp-sheet select{height:34px;min-width:140px}
+.imp-map td{vertical-align:middle;white-space:normal}
+.imp-map select{height:38px;min-width:190px;max-width:100%}
+.imp-req{color:var(--danger);font-weight:800}
+.imp-sample{color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap!important}
+
+.imp-chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+.imp-chip{border-radius:var(--r-m);padding:14px 16px;background:#F0EFFA}
+.imp-chip strong{display:block;font-size:28px;font-weight:800;line-height:1.1;color:var(--ink)}
+.imp-chip span{display:block;margin-top:4px;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.imp-chip.ok{background:#E4F4EA}.imp-chip.ok strong{color:#0F6B37}
+.imp-chip.warn{background:#FFF0D6}.imp-chip.warn strong{color:#8A4B00}
+.imp-chip.bad{background:#FDE9E7}.imp-chip.bad strong{color:#A3221B}
+.imp-h{font-size:14px;font-weight:700;margin:16px 0 8px}
+.imp-problems{max-height:260px;border:1px solid var(--line);border-radius:12px;margin-bottom:10px}
+.imp-why{white-space:normal!important;min-width:220px}
+.imp-done{margin:0 0 14px}
+
+.imp-progress{padding:18px 0 6px}
+.imp-progress p{margin:0 0 10px;display:flex;justify-content:space-between;gap:12px}
+.imp-bar{height:12px;border-radius:999px;background:#F2E9E3;overflow:hidden}
+.imp-bar i{display:block;height:100%;width:0;border-radius:999px;background:var(--brand-grad);transition:width .25s var(--ease)}
+.imp-progress p.muted{margin-top:12px;justify-content:flex-start}
+
+@media (max-width:640px){
+  .imp-sheet{margin-left:0;width:100%}
+  .imp-map select{min-width:0;width:100%}
+  .imp-steps li{font-size:11.5px}
+}
+@media (prefers-reduced-motion:reduce){.imp-bar i{transition:none}}

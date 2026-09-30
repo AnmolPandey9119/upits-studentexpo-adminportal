@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from database import get_pool, close_pool, run_schema
-from routers import admin
+from routers import admin, student_import
 
 
 @asynccontextmanager
@@ -54,6 +54,7 @@ app.add_middleware(
 
 app.include_router(admin.auth_router)
 app.include_router(admin.router)
+app.include_router(student_import.router)
 
 
 @app.exception_handler(RequestValidationError)

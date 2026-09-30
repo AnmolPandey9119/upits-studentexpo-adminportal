@@ -254,7 +254,8 @@ async function syncCertificatesFromDashboard() {
 // =================================================================
 async function renderStudents() {
   $("content").innerHTML = `
-    <div class="section-head"><div><h3>Student Directory</h3><p>Search by name, Passport ID, mobile or institution.</p></div></div>
+    <div class="section-head"><div><h3>Student Directory</h3><p>Search by name, Passport ID, mobile or institution.</p></div>
+      <button class="btn primary" onclick="openStudentImport()">Import from Excel</button></div>
     <div class="search" style="margin-bottom:14px"><input id="studentSearch" placeholder="Search students…" onkeydown="if(event.key==='Enter')studentSearch()"><button class="btn primary" onclick="studentSearch()">Search</button></div>
     <div id="studentTable" class="card table-wrap">Loading…</div>`;
   await studentSearch();
